@@ -1,0 +1,36 @@
+# build outputs
+dist/
+server/.build/
+server/pb_data/
+
+# deployment secrets and data (never commit)
+server/deploy/.env
+server/deploy/data/
+server/deploy/secrets/
+
+# Flutter / platform builds
+app/.dart_tool/
+app/build/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/android/.gradle/
+app/android/local.properties
+app/android/key.properties
+app/ohos/oh_modules/
+app/ohos/**/build/
+app/ohos/local.properties
+*.jks
+*.p12
+*.cer
+*.p7b
+
+.DS_Store
+.idea/
+.vscode/
+commandline-tools-*.zip
+
+# local Claude Code settings
+.claude/
+
+# machine-specific toolchain location
+tools/dev-env.local.sh

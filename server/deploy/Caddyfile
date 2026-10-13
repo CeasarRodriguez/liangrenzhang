@@ -1,0 +1,26 @@
+{
+	admin off
+	auto_https off
+	# clients connecting by IP send no SNI; map them to the server certificate
+	default_sni {$LEDGER_HOST}
+}
+
+:8443 {
+	tls /certs/server.crt /certs/server.key
+
+	# the admin UI and superuser APIs are only reachable through the SSH tunnel
+	@admin path /_ /_/* /api/collections/_superusers/* /api/backups* /api/settings* /api/logs*
+	respond @admin 404
+
+	encode zstd gzip
+
+	reverse_proxy pocketbase:8090 {
+		# keep realtime (SSE) events flowing immediately
+		flush_interval -1
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

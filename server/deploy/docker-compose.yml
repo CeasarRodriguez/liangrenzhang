@@ -1,0 +1,40 @@
+name: couple-ledger
+
+services:
+  pocketbase:
+    image: couple-ledger-server:${LEDGER_VERSION:?请在 .env 里设置 LEDGER_VERSION}
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data/pb_data:/app/pb_data
+      - ./secrets:/app/secrets:ro
+    # only reachable from this machine; open the admin UI through an SSH tunnel:
+    #   ssh -L 8090:127.0.0.1:8090 <server>  then visit http://127.0.0.1:8090/_/
+    ports:
+      - "127.0.0.1:8090:8090"
+    networks: [internal]
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: ${CADDY_IMAGE:?请在 .env 里设置 CADDY_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      pocketbase:
+        condition: service_healthy
+    environment:
+      LEDGER_HOST: ${LEDGER_HOST:?请在 .env 里设置 LEDGER_HOST}
+    ports:
+      - "${LEDGER_PORT:-8443}:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/certs:/certs:ro
+      - ./data/caddy:/data
+    networks: [internal]
+    logging: *logging
+
+networks:
+  internal: {}
