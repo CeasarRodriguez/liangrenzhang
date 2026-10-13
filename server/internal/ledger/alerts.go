@@ -62,6 +62,7 @@ func (l *ledger) evaluate(app core.App, householdId string) error {
 	entries := make([]budget.Entry, len(entryRecs))
 	for i, r := range entryRecs {
 		entries[i] = budget.Entry{
+			Owner:  r.GetString("owner"),
 			Type:   r.GetString("type"),
 			Amount: r.GetInt64("amount"),
 			Date:   r.GetString("occurred_on"),
@@ -146,11 +147,16 @@ func goalFromRecord(r *core.Record) (budget.Goal, error) {
 	if err != nil {
 		return budget.Goal{}, err
 	}
+	var plan map[string]int64
+	if err := r.UnmarshalJSONField("income_plan", &plan); err != nil {
+		return budget.Goal{}, err
+	}
 	return budget.Goal{
 		StartMonth:    start,
 		EndMonth:      end,
 		PlannedIncome: r.GetInt64("planned_income"),
 		SavingsTarget: r.GetInt64("savings_target"),
+		IncomePlan:    plan,
 	}, nil
 }
 

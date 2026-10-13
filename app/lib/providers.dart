@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/badges.dart';
 import 'core/budget.dart';
 import 'data/models.dart';
 import 'data/repository.dart';
@@ -130,4 +131,17 @@ final currentBudgetProvider = Provider<MonthBudget>((ref) {
   final t = today();
   final snap = computeSnapshot(goal.goal, entries.map((e) => e.toBudget()), Month.of(t), t);
   return MonthBudget(goal, snap);
+});
+
+/// Reservations not bought or given up yet, both partners', newest first.
+final reservationsProvider = Provider<List<Entry>>((ref) {
+  final entries = ref.watch(entriesProvider).value ?? const <Entry>[];
+  return entries.where((e) => e.reserved && e.isExpense).toList();
+});
+
+/// Months that earned a badge, newest first.
+final badgesProvider = Provider<List<Month>>((ref) {
+  final goals = ref.watch(goalsProvider).value ?? const <GoalRecord>[];
+  final entries = ref.watch(entriesProvider).value ?? const <Entry>[];
+  return earnedBadges(goals.map((g) => g.goal), entries.map((e) => e.toBudget()), Month.of(today()));
 });

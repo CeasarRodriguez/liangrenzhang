@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:sembast/sembast.dart';
 
 import '../core/budget.dart';
+import '../core/dates.dart';
 import '../core/ids.dart';
 import 'models.dart';
 import 'offline.dart';
@@ -46,6 +47,8 @@ class Repository {
     required String category,
     required String occurredOn,
     String? note,
+    bool? reserved,
+    String? title,
   }) async {
     final existing = id == null ? null : await s.db.getEntry(id);
     final entry = Entry(
@@ -56,6 +59,8 @@ class Repository {
       amount: amount,
       category: category,
       occurredOn: occurredOn,
+      reserved: reserved ?? existing?.reserved ?? false,
+      title: title ?? existing?.title ?? '',
       created: existing?.created ?? DateTime.now().toUtc().toIso8601String(),
       updated: existing?.updated ?? '',
       pending: _offline == null,
@@ -76,6 +81,48 @@ class Repository {
     _kick();
     return entry;
   }
+
+  /// Pre-deducts a planned purchase: it counts as spent today until it is
+  /// bought ([confirmReservation]) or given up ([deleteEntry]).
+  Future<Entry> reserve({
+    required int amount,
+    required String category,
+    required String title,
+    String? owner,
+    String? note,
+  }) {
+    final now = DateTime.now();
+    return saveEntry(
+      owner: owner,
+      type: typeExpense,
+      amount: amount,
+      category: category,
+      occurredOn: isoDate(DateTime(now.year, now.month, now.day)),
+      note: note,
+      reserved: true,
+      title: title,
+    );
+  }
+
+  /// Turns a reservation into the actual purchase, so it is never recorded
+  /// twice. Null arguments keep the reservation's values.
+  Future<Entry> confirmReservation(
+    Entry e, {
+    required String occurredOn,
+    required int amount,
+    String? category,
+    String? title,
+    String? note,
+  }) => saveEntry(
+    id: e.id,
+    type: typeExpense,
+    amount: amount,
+    category: category ?? e.category,
+    occurredOn: occurredOn,
+    note: note,
+    reserved: false,
+    title: title,
+  );
 
   Future<void> deleteEntry(Entry e) async {
     final deleted = e.copyWith(deleted: true, pending: _offline == null);
@@ -100,14 +147,17 @@ class Repository {
     String? id,
     required Month start,
     required Month end,
-    required int plannedIncome,
+    required Map<String, int> incomePlan,
     required int savingsTarget,
   }) async {
+    final months = start.monthsUntil(end);
     final body = {
       'household': s.householdId,
       'start_month': start.toString(),
       'end_month': end.toString(),
-      'planned_income': plannedIncome,
+      // the combined total keeps pre-1.2 apps working
+      'planned_income': incomePlan.values.fold(0, (a, b) => a + b) * months,
+      'income_plan': incomePlan,
       'savings_target': savingsTarget,
     };
     if (_offline != null) {

@@ -8,7 +8,7 @@
       "month": "2026-01",
       "today": "2026-01-01",
       "expect": {
-        "month": "2026-01", "in_period": true, "budget": 2000000, "spent_before": 0, "months_left": 12,
+        "month": "2026-01", "in_period": true, "expected_income": 12000000, "budget": 2000000, "spent_before": 0, "months_left": 12,
         "month_limit": 166666, "month_spent": 0, "month_income": 0, "month_remaining": 166666, "used_percent": 0,
         "period_spent": 0, "period_income": 0, "saved": 0, "to_target": 10000000, "expected_saved": 833333, "period_over": false,
         "days_left": 31, "daily_allowance": 5376
@@ -22,7 +22,7 @@
       "month": "2026-02",
       "today": "2026-02-10",
       "expect": {
-        "month": "2026-02", "in_period": true, "budget": 2000000, "spent_before": 200000, "months_left": 11,
+        "month": "2026-02", "in_period": true, "expected_income": 12000000, "budget": 2000000, "spent_before": 200000, "months_left": 11,
         "month_limit": 163636, "month_spent": 0, "month_income": 0, "month_remaining": 163636, "used_percent": 0,
         "period_spent": 200000, "period_income": 0, "saved": -200000, "to_target": 10200000, "expected_saved": 1666666, "period_over": false,
         "days_left": 19, "daily_allowance": 8612
@@ -40,7 +40,7 @@
       "month": "2026-10",
       "today": "2026-10-12",
       "expect": {
-        "month": "2026-10", "in_period": true, "budget": 1000000, "spent_before": 0, "months_left": 3,
+        "month": "2026-10", "in_period": true, "expected_income": 3000000, "budget": 1000000, "spent_before": 0, "months_left": 3,
         "month_limit": 333333, "month_spent": 100000, "month_income": 1000000, "month_remaining": 233333, "used_percent": 30,
         "period_spent": 100000, "period_income": 1000000, "saved": 900000, "to_target": 1100000, "expected_saved": 666666, "period_over": false,
         "days_left": 20, "daily_allowance": 11666
@@ -54,7 +54,7 @@
       "month": "2026-10",
       "today": "2026-10-12",
       "expect": {
-        "month": "2026-10", "in_period": true, "budget": 1000000, "spent_before": 0, "months_left": 3,
+        "month": "2026-10", "in_period": true, "expected_income": 3000000, "budget": 1000000, "spent_before": 0, "months_left": 3,
         "month_limit": 333333, "month_spent": 270000, "month_income": 0, "month_remaining": 63333, "used_percent": 81,
         "period_spent": 270000, "period_income": 0, "saved": -270000, "to_target": 2270000, "expected_saved": 666666, "period_over": false,
         "days_left": 20, "daily_allowance": 3166
@@ -68,7 +68,7 @@
       "month": "2026-10",
       "today": "2026-10-12",
       "expect": {
-        "month": "2026-10", "in_period": true, "budget": 1000000, "spent_before": 0, "months_left": 3,
+        "month": "2026-10", "in_period": true, "expected_income": 3000000, "budget": 1000000, "spent_before": 0, "months_left": 3,
         "month_limit": 333333, "month_spent": 333333, "month_income": 0, "month_remaining": 0, "used_percent": 100,
         "period_spent": 333333, "period_income": 0, "saved": -333333, "to_target": 2333333, "expected_saved": 666666, "period_over": false,
         "days_left": 20, "daily_allowance": 0
@@ -82,7 +82,7 @@
       "month": "2026-10",
       "today": "2026-10-12",
       "expect": {
-        "month": "2026-10", "in_period": true, "budget": 1000000, "spent_before": 0, "months_left": 3,
+        "month": "2026-10", "in_period": true, "expected_income": 3000000, "budget": 1000000, "spent_before": 0, "months_left": 3,
         "month_limit": 333333, "month_spent": 400000, "month_income": 0, "month_remaining": -66667, "used_percent": 120,
         "period_spent": 400000, "period_income": 0, "saved": -400000, "to_target": 2400000, "expected_saved": 666666, "period_over": false,
         "days_left": 20, "daily_allowance": 0
@@ -99,7 +99,7 @@
       "month": "2026-04",
       "today": "2026-04-15",
       "expect": {
-        "month": "2026-04", "in_period": true, "budget": 2000000, "spent_before": 2100000, "months_left": 9,
+        "month": "2026-04", "in_period": true, "expected_income": 12000000, "budget": 2000000, "spent_before": 2100000, "months_left": 9,
         "month_limit": 0, "month_spent": 0, "month_income": 0, "month_remaining": 0, "used_percent": 0,
         "period_spent": 2100000, "period_income": 0, "saved": -2100000, "to_target": 12100000, "expected_saved": 3333333, "period_over": true,
         "days_left": 16, "daily_allowance": 0
@@ -117,7 +117,7 @@
       "month": "2026-04",
       "today": "2026-04-16",
       "expect": {
-        "month": "2026-04", "in_period": true, "budget": 2000000, "spent_before": 2100000, "months_left": 9,
+        "month": "2026-04", "in_period": true, "expected_income": 12000000, "budget": 2000000, "spent_before": 2100000, "months_left": 9,
         "month_limit": 0, "month_spent": 100, "month_income": 0, "month_remaining": -100, "used_percent": 999,
         "period_spent": 2100100, "period_income": 0, "saved": -2100100, "to_target": 12100100, "expected_saved": 3333333, "period_over": true,
         "days_left": 15, "daily_allowance": 0
@@ -131,7 +131,7 @@
       "month": "2026-01",
       "today": "2026-01-20",
       "expect": {
-        "month": "2026-01", "in_period": true, "budget": -1000000, "spent_before": 0, "months_left": 12,
+        "month": "2026-01", "in_period": true, "expected_income": 5000000, "budget": -1000000, "spent_before": 0, "months_left": 12,
         "month_limit": 0, "month_spent": 1000, "month_income": 0, "month_remaining": -1000, "used_percent": 999,
         "period_spent": 1000, "period_income": 0, "saved": -1000, "to_target": 6001000, "expected_saved": 500000, "period_over": true,
         "days_left": 12, "daily_allowance": 0
@@ -145,7 +145,7 @@
       "month": "2026-09",
       "today": "2026-10-12",
       "expect": {
-        "month": "2026-09", "in_period": false, "budget": 1000000, "spent_before": 0, "months_left": 0,
+        "month": "2026-09", "in_period": false, "expected_income": 3000000, "budget": 1000000, "spent_before": 0, "months_left": 0,
         "month_limit": 0, "month_spent": 50000, "month_income": 0, "month_remaining": -50000, "used_percent": 999,
         "period_spent": 0, "period_income": 0, "saved": 0, "to_target": 2000000, "expected_saved": 0, "period_over": false,
         "days_left": 0, "daily_allowance": 0
@@ -159,10 +159,93 @@
       "month": "2026-11",
       "today": "2026-10-12",
       "expect": {
-        "month": "2026-11", "in_period": true, "budget": 1000000, "spent_before": 100000, "months_left": 2,
+        "month": "2026-11", "in_period": true, "expected_income": 3000000, "budget": 1000000, "spent_before": 100000, "months_left": 2,
         "month_limit": 450000, "month_spent": 0, "month_income": 0, "month_remaining": 450000, "used_percent": 0,
         "period_spent": 100000, "period_income": 0, "saved": -100000, "to_target": 2100000, "expected_saved": 1333333, "period_over": false,
         "days_left": 30, "daily_allowance": 15000
+      },
+      "levels": []
+    },
+    {
+      "name": "按人修正-修正期最后一天上月仍按预期",
+      "goal": {"start_month": "2026-10", "end_month": "2026-12", "planned_income": 5400000, "savings_target": 2000000, "income_plan": {"alice": 1000000, "bob": 800000}},
+      "entries": [
+        {"owner": "alice", "type": "income", "amount": 900000, "date": "2026-10-15"},
+        {"owner": "alice", "type": "expense", "amount": 100000, "date": "2026-10-05"}
+      ],
+      "month": "2026-11",
+      "today": "2026-11-07",
+      "expect": {
+        "month": "2026-11", "in_period": true, "expected_income": 5400000, "budget": 3400000, "spent_before": 100000, "months_left": 2,
+        "month_limit": 1650000, "month_spent": 0, "month_income": 0, "month_remaining": 1650000, "used_percent": 0,
+        "period_spent": 100000, "period_income": 900000, "saved": 800000, "to_target": 1200000, "expected_saved": 1333333, "period_over": false,
+        "days_left": 24, "daily_allowance": 68750
+      },
+      "levels": []
+    },
+    {
+      "name": "按人修正-修正期过后到账少的按实际-没记的按预期",
+      "goal": {"start_month": "2026-10", "end_month": "2026-12", "planned_income": 5400000, "savings_target": 2000000, "income_plan": {"alice": 1000000, "bob": 800000}},
+      "entries": [
+        {"owner": "alice", "type": "income", "amount": 900000, "date": "2026-10-15"},
+        {"owner": "alice", "type": "expense", "amount": 100000, "date": "2026-10-05"}
+      ],
+      "month": "2026-11",
+      "today": "2026-11-08",
+      "expect": {
+        "month": "2026-11", "in_period": true, "expected_income": 5300000, "budget": 3300000, "spent_before": 100000, "months_left": 2,
+        "month_limit": 1600000, "month_spent": 0, "month_income": 0, "month_remaining": 1600000, "used_percent": 0,
+        "period_spent": 100000, "period_income": 900000, "saved": 800000, "to_target": 1200000, "expected_saved": 1333333, "period_over": false,
+        "days_left": 23, "daily_allowance": 69565
+      },
+      "levels": []
+    },
+    {
+      "name": "本月多到账立即放宽",
+      "goal": {"start_month": "2026-10", "end_month": "2026-12", "planned_income": 3000000, "savings_target": 2000000, "income_plan": {"alice": 1000000}},
+      "entries": [{"owner": "alice", "type": "income", "amount": 1500000, "date": "2026-10-10"}],
+      "month": "2026-10",
+      "today": "2026-10-12",
+      "expect": {
+        "month": "2026-10", "in_period": true, "expected_income": 3500000, "budget": 1500000, "spent_before": 0, "months_left": 3,
+        "month_limit": 500000, "month_spent": 0, "month_income": 1500000, "month_remaining": 500000, "used_percent": 0,
+        "period_spent": 0, "period_income": 1500000, "saved": 1500000, "to_target": 500000, "expected_saved": 666666, "period_over": false,
+        "days_left": 20, "daily_allowance": 25000
+      },
+      "levels": []
+    },
+    {
+      "name": "不在计划里的人记的收入也算",
+      "goal": {"start_month": "2026-10", "end_month": "2026-12", "planned_income": 3000000, "savings_target": 2000000, "income_plan": {"alice": 1000000}},
+      "entries": [
+        {"owner": "alice", "type": "income", "amount": 1000000, "date": "2026-10-10"},
+        {"owner": "bob", "type": "income", "amount": 300000, "date": "2026-10-20"}
+      ],
+      "month": "2026-11",
+      "today": "2026-11-10",
+      "expect": {
+        "month": "2026-11", "in_period": true, "expected_income": 3300000, "budget": 1300000, "spent_before": 0, "months_left": 2,
+        "month_limit": 650000, "month_spent": 0, "month_income": 0, "month_remaining": 650000, "used_percent": 0,
+        "period_spent": 0, "period_income": 1300000, "saved": 1300000, "to_target": 700000, "expected_saved": 1333333, "period_over": false,
+        "days_left": 21, "daily_allowance": 30952
+      },
+      "levels": []
+    },
+    {
+      "name": "旧目标-两人合计按实际修正",
+      "goal": {"start_month": "2026-01", "end_month": "2026-12", "planned_income": 12000000, "savings_target": 10000000},
+      "entries": [
+        {"owner": "alice", "type": "income", "amount": 600000, "date": "2026-01-10"},
+        {"owner": "alice", "type": "expense", "amount": 100000, "date": "2026-01-12"},
+        {"owner": "bob", "type": "income", "amount": 1200000, "date": "2026-03-10"}
+      ],
+      "month": "2026-04",
+      "today": "2026-04-15",
+      "expect": {
+        "month": "2026-04", "in_period": true, "expected_income": 11800000, "budget": 1800000, "spent_before": 100000, "months_left": 9,
+        "month_limit": 188888, "month_spent": 0, "month_income": 0, "month_remaining": 188888, "used_percent": 0,
+        "period_spent": 100000, "period_income": 1800000, "saved": 1700000, "to_target": 8300000, "expected_saved": 3333333, "period_over": false,
+        "days_left": 16, "daily_allowance": 11805
       },
       "levels": []
     }

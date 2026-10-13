@@ -459,3 +459,56 @@ func TestBudgetAlerts(t *testing.T) {
 		t.Fatalf("bob's stale device should be removed, got %d", n)
 	}
 }
+
+func TestIncomePlanAndReservations(t *testing.T) {
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	// November 10th: October is settled (past its grace period)
+	h := newHarness(t, 3, time.Date(2026, 11, 10, 9, 0, 0, 0, loc))
+	alice, bob, _, household, _ := h.couple()
+
+	goalBody := func(plan any) map[string]any {
+		return map[string]any{
+			"household": household, "start_month": "2026-10", "end_month": "2026-12",
+			"planned_income": 6000000, "savings_target": 3000000, "income_plan": plan,
+		}
+	}
+	for _, bad := range []any{
+		map[string]any{"not an id": 100},
+		map[string]any{alice.id: -1},
+		map[string]any{alice.id: 1.5},
+		map[string]any{alice.id: 1, bob.id: 1, "*": 1, "x00000000000000": 1},
+		[]int{1, 2},
+	} {
+		h.expect(h.do("POST", "/api/collections/goals/records", alice.token, goalBody(bad)), 400, fmt.Sprintf("income_plan %v", bad))
+	}
+	// 10,000 a month each
+	h.expect(h.do("POST", "/api/collections/goals/records", alice.token,
+		goalBody(map[string]any{alice.id: 1000000, bob.id: 1000000})), 200, "create goal")
+
+	// Alice got only 4,000 in October, Bob recorded nothing (falls back to
+	// his plan): 54,000 expected, 24,000 to spend, 12,000 for November.
+	h.expect(h.do("POST", "/api/collections/entries/records", alice.token,
+		entryBody(newID(), household, alice.id, "income", 400000, "2026-10-15")), 200, "october income")
+
+	// a 10,000 reservation is 83% of the corrected limit (66% uncorrected)
+	reserved := entryBody(newID(), household, bob.id, "expense", 1000000, "2026-11-10")
+	reserved["reserved"] = true
+	reserved["title"] = "新手机"
+	h.expect(h.do("POST", "/api/collections/entries/records", bob.token, reserved), 200, "reserve")
+
+	r := h.expect(h.do("GET", "/api/collections/alerts/records", alice.token, nil), 200, "list alerts")
+	if items := r.items(); len(items) != 1 || items[0].(map[string]any)["kind"] != "month_80" {
+		t.Fatalf("expected a month_80 alert from the corrected limit, got %v", items)
+	}
+
+	id := reserved["id"].(string)
+	seen := h.expect(h.do("GET", "/api/collections/entries/records/"+id, alice.token, nil), 200, "alice views reservation")
+	if seen.body["reserved"] != true || seen.str("title") != "新手机" {
+		t.Fatalf("partner should see the reservation and its title: %v", seen.body)
+	}
+	h.expect(h.do("PATCH", "/api/collections/entries/records/"+id, alice.token, map[string]any{"reserved": false}), 404, "alice confirms bob's reservation")
+	bought := h.expect(h.do("PATCH", "/api/collections/entries/records/"+id, bob.token, map[string]any{"reserved": false}), 200, "bob bought it")
+	if bought.body["reserved"] != false || bought.str("title") != "新手机" {
+		t.Fatalf("unexpected bought entry: %v", bought.body)
+	}
+}

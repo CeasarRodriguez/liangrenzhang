@@ -12,6 +12,8 @@ class Entry {
     required this.amount,
     required this.category,
     required this.occurredOn,
+    this.reserved = false,
+    this.title = '',
     this.deleted = false,
     this.updated = '',
     this.created = '',
@@ -25,6 +27,12 @@ class Entry {
   final int amount;
   final String category;
   final String occurredOn; // YYYY-MM-DD
+
+  /// Pre-deducted for a planned purchase: counted as spent, not bought yet.
+  final bool reserved;
+
+  /// Item name of a reservation, visible to both partners.
+  final String title;
   final bool deleted;
   final String updated;
   final String created;
@@ -35,7 +43,7 @@ class Entry {
   bool get isExpense => type == typeExpense;
   Month get month => Month.ofDate(occurredOn);
 
-  BudgetEntry toBudget() => BudgetEntry(type: type, amount: amount, date: occurredOn);
+  BudgetEntry toBudget() => BudgetEntry(owner: owner, type: type, amount: amount, date: occurredOn);
 
   factory Entry.fromJson(Json j) => Entry(
     id: j['id'] as String,
@@ -45,6 +53,8 @@ class Entry {
     amount: (j['amount'] as num?)?.toInt() ?? 0,
     category: j['category'] as String? ?? '其他',
     occurredOn: j['occurred_on'] as String? ?? '',
+    reserved: j['reserved'] as bool? ?? false,
+    title: j['title'] as String? ?? '',
     deleted: j['deleted'] as bool? ?? false,
     updated: j['updated'] as String? ?? '',
     created: j['created'] as String? ?? '',
@@ -60,25 +70,37 @@ class Entry {
     'amount': amount,
     'category': category,
     'occurred_on': occurredOn,
+    'reserved': reserved,
+    'title': title,
     'deleted': deleted,
   };
 
   Json toLocal() => {...toApi(), 'updated': updated, 'created': created, '_pending': pending};
 
-  Entry copyWith({String? type, int? amount, String? category, String? occurredOn, bool? deleted, bool? pending}) =>
-      Entry(
-        id: id,
-        household: household,
-        owner: owner,
-        type: type ?? this.type,
-        amount: amount ?? this.amount,
-        category: category ?? this.category,
-        occurredOn: occurredOn ?? this.occurredOn,
-        deleted: deleted ?? this.deleted,
-        updated: updated,
-        created: created,
-        pending: pending ?? this.pending,
-      );
+  Entry copyWith({
+    String? type,
+    int? amount,
+    String? category,
+    String? occurredOn,
+    bool? reserved,
+    String? title,
+    bool? deleted,
+    bool? pending,
+  }) => Entry(
+    id: id,
+    household: household,
+    owner: owner,
+    type: type ?? this.type,
+    amount: amount ?? this.amount,
+    category: category ?? this.category,
+    occurredOn: occurredOn ?? this.occurredOn,
+    reserved: reserved ?? this.reserved,
+    title: title ?? this.title,
+    deleted: deleted ?? this.deleted,
+    updated: updated,
+    created: created,
+    pending: pending ?? this.pending,
+  );
 }
 
 class GoalRecord {
@@ -89,6 +111,7 @@ class GoalRecord {
     required this.endMonth,
     required this.plannedIncome,
     required this.savingsTarget,
+    this.incomePlan = const {},
   });
 
   final String id;
@@ -98,8 +121,17 @@ class GoalRecord {
   final int plannedIncome;
   final int savingsTarget;
 
-  Goal get goal =>
-      Goal(startMonth: startMonth, endMonth: endMonth, plannedIncome: plannedIncome, savingsTarget: savingsTarget);
+  /// Expected monthly income per member (see [Goal.incomePlan]); empty for
+  /// goals saved before v1.2, which only have the combined [plannedIncome].
+  final Map<String, int> incomePlan;
+
+  Goal get goal => Goal(
+    startMonth: startMonth,
+    endMonth: endMonth,
+    plannedIncome: plannedIncome,
+    savingsTarget: savingsTarget,
+    incomePlan: incomePlan,
+  );
 
   static GoalRecord? fromJson(Json j) {
     final start = Month.tryParse(j['start_month'] as String? ?? '');
@@ -112,6 +144,13 @@ class GoalRecord {
       endMonth: end,
       plannedIncome: (j['planned_income'] as num?)?.toInt() ?? 0,
       savingsTarget: (j['savings_target'] as num?)?.toInt() ?? 0,
+      incomePlan: switch (j['income_plan']) {
+        final Map<String, dynamic> plan => {
+          for (final e in plan.entries)
+            if (e.value is num) e.key: (e.value as num).toInt(),
+        },
+        _ => const {},
+      },
     );
   }
 }

@@ -171,13 +171,26 @@ class EntryTile extends ConsumerWidget {
     final theme = Theme.of(context);
     final who = members.nameOf(entry.owner);
 
-    final subtitle = [if (showDate) friendlyDate(entry.occurredOn), who, if (note.isNotEmpty) note].join(' · ');
+    final subtitle = [
+      if (showDate) friendlyDate(entry.occurredOn),
+      who,
+      if (entry.title.isNotEmpty) entry.title,
+      if (note.isNotEmpty) note,
+    ].join(' · ');
 
     return ListTile(
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
       leading: CategoryAvatar(type: entry.type, category: entry.category),
-      title: Text(entry.category),
+      title: entry.reserved
+          ? Row(
+              children: [
+                Flexible(child: Text(entry.category, overflow: TextOverflow.ellipsis)),
+                const SizedBox(width: 6),
+                const ReservedChip(),
+              ],
+            )
+          : Text(entry.category),
       subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -196,6 +209,32 @@ class EntryTile extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Marks a pre-deducted purchase that has not been bought yet.
+class ReservedChip extends StatelessWidget {
+  const ReservedChip({super.key, this.large = false});
+
+  final bool large;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      widthFactor: 1,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: large ? 10 : 6, vertical: large ? 4 : 1),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          large ? '预扣中 · 还没买' : '预扣',
+          style: TextStyle(fontSize: large ? 13 : 11, color: AppColors.warning, fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }

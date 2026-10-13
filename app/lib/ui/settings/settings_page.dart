@@ -8,6 +8,7 @@ import '../../data/services.dart';
 import '../../providers.dart';
 import '../alerts/alert_messages_page.dart';
 import '../alerts/alerts_history_page.dart';
+import '../badges/badges_page.dart';
 import '../goal/goal_page.dart';
 import '../widgets.dart';
 import 'notification_setup_page.dart';
@@ -25,6 +26,7 @@ class SettingsPage extends ConsumerWidget {
     final status = ref.watch(syncStatusProvider).value;
     final pending = ref.watch(outboxCountProvider).value ?? 0;
     final unread = (ref.watch(alertsProvider).value ?? const []).where((a) => !a.read).length;
+    final badges = ref.watch(badgesProvider).length;
     final theme = Theme.of(context);
 
     void push(Widget page) => Navigator.push(context, MaterialPageRoute(builder: (_) => page));
@@ -118,6 +120,13 @@ class SettingsPage extends ConsumerWidget {
                   ),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => push(const GoalPage()),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.military_tech_outlined),
+                  title: const Text('我们的奖章'),
+                  subtitle: Text(badges == 0 ? '守住一个月的预算就能拿到' : '已获得 $badges 枚'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => push(const BadgesPage()),
                 ),
                 ListTile(
                   leading: const Icon(Icons.chat_bubble_outline_rounded),

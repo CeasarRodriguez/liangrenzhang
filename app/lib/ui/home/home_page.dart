@@ -10,6 +10,7 @@ import '../../data/models.dart';
 import '../../providers.dart';
 import '../entry/entry_editor.dart';
 import '../goal/goal_page.dart';
+import '../plan/purchase_page.dart';
 import '../widgets.dart';
 
 class HomePage extends ConsumerWidget {
@@ -43,6 +44,8 @@ class HomePage extends ConsumerWidget {
               _MonthCard(snapshot: budget.snapshot!),
               const SizedBox(height: 12),
               _GoalCard(goal: budget.goal!, snapshot: budget.snapshot!),
+              const SizedBox(height: 12),
+              _PurchaseCard(reservations: ref.watch(reservationsProvider)),
             ],
             const SizedBox(height: 12),
             _CoupleCard(entries: entries, members: members),
@@ -291,6 +294,48 @@ class _GoalCard extends StatelessWidget {
                 : '按计划到本月底应攒到 ${yuan(s.expectedSaved)}，加油，还差 ${yuan(-ahead)}',
             style: TextStyle(fontSize: 13, color: theme.colorScheme.outline),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Entry to the big-purchase calculator, with the open reservations.
+class _PurchaseCard extends StatelessWidget {
+  const _PurchaseCard({required this.reservations});
+
+  final List<Entry> reservations;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final total = reservations.fold(0, (a, e) => a + e.amount);
+    return SectionCard(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PurchasePage())),
+      child: Row(
+        children: [
+          const Icon(Icons.calculate_rounded, color: AppColors.coral),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('想买大件？先算一算', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(
+                  reservations.isEmpty
+                      ? '输入价格，看看对本月额度和攒钱目标的影响'
+                      : '预扣中 ${reservations.length} 笔，共 ${yuan(total)}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: reservations.isEmpty ? theme.colorScheme.outline : AppColors.warning,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded),
         ],
       ),
     );

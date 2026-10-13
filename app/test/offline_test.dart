@@ -4,7 +4,10 @@ import 'package:couple_ledger/core/alert_copy.dart';
 import 'package:couple_ledger/core/budget.dart';
 import 'package:couple_ledger/data/local_db.dart';
 import 'package:couple_ledger/data/models.dart';
+import 'package:couple_ledger/data/native.dart';
 import 'package:couple_ledger/data/offline.dart';
+import 'package:couple_ledger/data/repository.dart';
+import 'package:couple_ledger/data/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sembast/sembast_memory.dart';
 
@@ -100,6 +103,48 @@ void main() {
       expect(await db.entries.count(db.db), 0);
       expect(await db.alerts.count(db.db), 0);
       expect(await db.members.count(db.db), 2);
+    });
+  });
+
+  group('reservations', () {
+    late AppServices services;
+    late Repository repo;
+
+    setUp(() async {
+      final db = LocalDb(await newDatabaseFactoryMemory().openDatabase('r.db'));
+      services = AppServices(
+        env: AppEnv(native: NativeBridge(), platform: 'android', dir: Directory.systemTemp.path, caPem: null),
+        mode: AppMode.offline,
+        db: db,
+      );
+      await services.init();
+      repo = Repository(services);
+    });
+
+    Future<List<Entry>> entries() async =>
+        (await services.db.entries.find(services.db.db)).map((s) => Entry.fromJson(Map.of(s.value))).toList();
+
+    test('buying turns the reservation into the purchase, without a second entry', () async {
+      final r = await repo.reserve(amount: 599900, category: '购物', title: '新手机', note: '黑色');
+      expect(r.reserved, isTrue);
+      expect(r.isExpense, isTrue);
+
+      final bought = await repo.confirmReservation(r, occurredOn: '2026-11-02', amount: 589900);
+      final all = await entries();
+      expect(all, hasLength(1));
+      expect(all.single.id, r.id);
+      expect(all.single.reserved, isFalse);
+      expect(all.single.title, '新手机');
+      expect(all.single.amount, 589900);
+      expect(all.single.occurredOn, '2026-11-02');
+      expect(bought.category, '购物');
+      expect((await services.db.notes.record(r.id).get(services.db.db))?['note'], '黑色');
+    });
+
+    test('giving up removes it from the budget', () async {
+      final r = await repo.reserve(amount: 100000, category: '购物', title: '耳机');
+      await repo.deleteEntry(r);
+      expect((await entries()).single.deleted, isTrue);
     });
   });
 }

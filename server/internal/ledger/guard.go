@@ -1,7 +1,9 @@
 package ledger
 
 import (
+	"math"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -83,6 +85,10 @@ func validateGoal(e *core.RecordEvent) error {
 		return validation.Errors{"end_month": validation.NewError("too_long", "计划期最长 36 个月")}
 	}
 
+	if err := validateIncomePlan(e.Record); err != nil {
+		return err
+	}
+
 	overlap, err := e.App.CountRecords("goals",
 		dbx.HashExp{"household": e.Record.GetString("household")},
 		dbx.Not(dbx.HashExp{"id": e.Record.Id}),
@@ -99,6 +105,30 @@ func validateGoal(e *core.RecordEvent) error {
 	}
 
 	return e.Next()
+}
+
+var recordIdPattern = regexp.MustCompile(`^[a-z0-9]{15}$`)
+
+// validateIncomePlan accepts {"<user id>" | "*": cents} with at most one
+// key per member plus "*".
+func validateIncomePlan(r *core.Record) error {
+	invalid := validation.Errors{"income_plan": validation.NewError("invalid_income_plan", "预期收入格式不正确")}
+	var plan map[string]float64
+	if err := r.UnmarshalJSONField("income_plan", &plan); err != nil {
+		return invalid
+	}
+	if len(plan) > 3 {
+		return invalid
+	}
+	for k, v := range plan {
+		if k != budget.OthersKey && !recordIdPattern.MatchString(k) {
+			return invalid
+		}
+		if v < 0 || v > 1e10 || v != math.Trunc(v) {
+			return invalid
+		}
+	}
+	return nil
 }
 
 // dedupeDeviceToken lets a push token move to whoever logged in last on

@@ -12,13 +12,13 @@ import '../../data/offline.dart';
 import '../../providers.dart';
 import '../widgets.dart';
 
-Future<void> showEntryEditor(BuildContext context, {Entry? entry}) {
+Future<void> showEntryEditor(BuildContext context, {Entry? entry, String? initialType, DateTime? initialDate}) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
-    builder: (_) => EntryEditor(entry: entry),
+    builder: (_) => EntryEditor(entry: entry, initialType: initialType, initialDate: initialDate),
   );
 }
 
@@ -36,9 +36,13 @@ void openEntry(BuildContext context, WidgetRef ref, Entry e) {
 }
 
 class EntryEditor extends ConsumerStatefulWidget {
-  const EntryEditor({super.key, this.entry});
+  const EntryEditor({super.key, this.entry, this.initialType, this.initialDate});
 
   final Entry? entry;
+
+  /// For a new entry: preselected type and date.
+  final String? initialType;
+  final DateTime? initialDate;
 
   @override
   ConsumerState<EntryEditor> createState() => _EntryEditorState();
@@ -49,23 +53,29 @@ class _EntryEditorState extends ConsumerState<EntryEditor> {
   late String _category;
   late DateTime _date;
 
+  /// The category was chosen rather than left at the default.
+  bool _categoryPicked = false;
+
   /// Offline trial only: record as the simulated partner.
   bool _asPartner = false;
   final _amount = TextEditingController();
   final _note = TextEditingController();
+  final _title = TextEditingController();
 
   bool get _editing => widget.entry != null;
+  bool get _reserved => widget.entry?.reserved ?? false;
 
   @override
   void initState() {
     super.initState();
     final e = widget.entry;
-    _type = e?.type ?? typeExpense;
-    _category = e?.category ?? expenseCategories.first.name;
-    _date = e == null ? today() : parseIsoDate(e.occurredOn);
+    _type = e?.type ?? widget.initialType ?? typeExpense;
+    _category = e?.category ?? categoriesFor(_type).first.name;
+    _date = e == null ? (widget.initialDate ?? today()) : parseIsoDate(e.occurredOn);
     if (e != null) {
       _amount.text = centsToInput(e.amount);
       _note.text = ref.read(notesProvider).value?[e.id] ?? '';
+      _title.text = e.title;
     }
   }
 
@@ -73,13 +83,17 @@ class _EntryEditorState extends ConsumerState<EntryEditor> {
   void dispose() {
     _amount.dispose();
     _note.dispose();
+    _title.dispose();
     super.dispose();
   }
 
   void _setType(String type) {
     setState(() {
       _type = type;
-      if (!categoriesFor(type).any((c) => c.name == _category)) _category = categoriesFor(type).first.name;
+      if (!categoriesFor(type).any((c) => c.name == _category)) {
+        _category = categoriesFor(type).first.name;
+        _categoryPicked = false;
+      }
     });
   }
 
@@ -93,36 +107,131 @@ class _EntryEditorState extends ConsumerState<EntryEditor> {
     if (picked != null) setState(() => _date = picked);
   }
 
-  Future<void> _save() async {
+  int? _cents() {
     final cents = parseYuan(_amount.text);
     if (cents == null || cents <= 0) {
       showMessage(context, '请输入正确的金额（最多两位小数）');
-      return;
+      return null;
     }
+    return cents;
+  }
+
+  Future<void> _save() async {
+    final cents = _cents();
+    if (cents == null) return;
+    final repo = ref.read(repositoryProvider);
+
+    // a new expense with the amount of a reservation is most likely the purchase itself
+    if (!_editing && _type == typeExpense) {
+      final owner = _asPartner ? offlinePartnerId : ref.read(currentUserIdProvider);
+      final matches = ref
+          .read(reservationsProvider)
+          .where((r) => r.owner == owner && r.amount == cents)
+          .toList();
+      if (matches.isNotEmpty) {
+        final choice = await _askDuplicate(matches);
+        if (choice == null || !mounted) return;
+        if (choice.isNotEmpty) {
+          final reservation = matches.firstWhere((r) => r.id == choice);
+          final note = _note.text.trim();
+          await repo.confirmReservation(
+            reservation,
+            occurredOn: isoDate(_date),
+            amount: cents,
+            // keep the reservation's category unless one was chosen here
+            category: _categoryPicked ? _category : null,
+            note: note.isEmpty ? null : note,
+          );
+          if (mounted) {
+            showMessage(context, '已把预扣「${reservation.title}」记为已购买，没有重复记账');
+            Navigator.pop(context);
+          }
+          return;
+        }
+      }
+    }
+
+    await repo.saveEntry(
+      id: widget.entry?.id,
+      owner: _asPartner ? offlinePartnerId : null,
+      type: _type,
+      amount: cents,
+      category: _category,
+      occurredOn: isoDate(_date),
+      note: _note.text.trim(),
+      title: _reserved ? _title.text.trim() : null,
+    );
+    if (mounted) Navigator.pop(context);
+  }
+
+  /// The id of the reservation this entry is, '' for "a different one", or
+  /// null when dismissed.
+  Future<String?> _askDuplicate(List<Entry> matches) => showDialog<String>(
+    context: context,
+    builder: (context) => SimpleDialog(
+      title: const Text('会不会重复记账？'),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+          child: Text(
+            matches.length == 1
+                ? '你有一笔同样金额的预扣「${matches.single.title}」，这笔是不是就是它？'
+                : '你有几笔同样金额的预扣，这笔是其中之一吗？',
+            style: const TextStyle(height: 1.5),
+          ),
+        ),
+        for (final r in matches)
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, r.id),
+            child: Text(
+              '是「${r.title}」，记为已购买（${friendlyDate(r.occurredOn)}预扣）',
+              style: const TextStyle(color: AppColors.coral, fontWeight: FontWeight.w600),
+            ),
+          ),
+        SimpleDialogOption(onPressed: () => Navigator.pop(context, ''), child: const Text('不是，另记一笔')),
+      ],
+    ),
+  );
+
+  /// Reservation: the purchase happened.
+  Future<void> _bought() async {
+    final cents = _cents();
+    if (cents == null) return;
+    final date = await showDatePicker(
+      context: context,
+      helpText: '哪天买的？',
+      initialDate: today(),
+      firstDate: DateTime(2020),
+      lastDate: today().add(const Duration(days: 365)),
+    );
+    if (date == null || !mounted) return;
     await ref
         .read(repositoryProvider)
-        .saveEntry(
-          id: widget.entry?.id,
-          owner: _asPartner ? offlinePartnerId : null,
-          type: _type,
+        .confirmReservation(
+          widget.entry!,
+          occurredOn: isoDate(date),
           amount: cents,
           category: _category,
-          occurredOn: isoDate(_date),
+          title: _title.text.trim(),
           note: _note.text.trim(),
         );
-    if (mounted) Navigator.pop(context);
+    if (mounted) {
+      showMessage(context, '已记为已购买');
+      Navigator.pop(context);
+    }
   }
 
   Future<void> _delete() async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除这笔账？'),
+        title: Text(_reserved ? '不买了，取消这笔预扣？' : '删除这笔账？'),
+        content: _reserved ? const Text('预扣的钱会退回本月额度。') : null,
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除', style: TextStyle(color: AppColors.danger)),
+            child: Text(_reserved ? '取消预扣' : '删除', style: const TextStyle(color: AppColors.danger)),
           ),
         ],
       ),
@@ -144,14 +253,27 @@ class _EntryEditorState extends ConsumerState<EntryEditor> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: typeExpense, label: Text('支出'), icon: Icon(Icons.remove_circle_outline_rounded)),
-                ButtonSegment(value: typeIncome, label: Text('收入'), icon: Icon(Icons.add_circle_outline_rounded)),
-              ],
-              selected: {_type},
-              onSelectionChanged: (v) => _setType(v.first),
-            ),
+            if (_reserved) ...[
+              const ReservedChip(large: true),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _title,
+                maxLength: 30,
+                decoration: const InputDecoration(
+                  labelText: '买什么',
+                  prefixIcon: Icon(Icons.shopping_bag_outlined, size: 20),
+                  helperText: '物品名两人都能看到',
+                ),
+              ),
+            ] else
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: typeExpense, label: Text('支出'), icon: Icon(Icons.remove_circle_outline_rounded)),
+                  ButtonSegment(value: typeIncome, label: Text('收入'), icon: Icon(Icons.add_circle_outline_rounded)),
+                ],
+                selected: {_type},
+                onSelectionChanged: (v) => _setType(v.first),
+              ),
             if (offline && !_editing) ...[
               const SizedBox(height: 12),
               SegmentedButton<bool>(
@@ -190,7 +312,10 @@ class _EntryEditorState extends ConsumerState<EntryEditor> {
                     avatar: Icon(c.icon, size: 18, color: _category == c.name ? null : c.color),
                     label: Text(c.name),
                     selected: _category == c.name,
-                    onSelected: (_) => setState(() => _category = c.name),
+                    onSelected: (_) => setState(() {
+                      _category = c.name;
+                      _categoryPicked = true;
+                    }),
                   ),
               ],
             ),
@@ -198,9 +323,9 @@ class _EntryEditorState extends ConsumerState<EntryEditor> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.calendar_today_rounded),
-              title: Text(friendlyDate(isoDate(_date))),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: _pickDate,
+              title: Text(_reserved ? '${friendlyDate(isoDate(_date))} 预扣' : friendlyDate(isoDate(_date))),
+              trailing: _reserved ? null : const Icon(Icons.chevron_right_rounded),
+              onTap: _reserved ? null : _pickDate,
             ),
             if (!_asPartner)
               TextField(
@@ -213,12 +338,21 @@ class _EntryEditorState extends ConsumerState<EntryEditor> {
                 ),
               ),
             const SizedBox(height: 12),
-            FilledButton(onPressed: _save, child: Text(_editing ? '保存修改' : '记下来')),
+            if (_reserved) ...[
+              FilledButton.icon(
+                onPressed: _bought,
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('已经买了'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(onPressed: _save, child: const Text('保存修改（继续预扣）')),
+            ] else
+              FilledButton(onPressed: _save, child: Text(_editing ? '保存修改' : '记下来')),
             if (_editing) ...[
               const SizedBox(height: 8),
               TextButton(
                 onPressed: _delete,
-                child: const Text('删除这笔', style: TextStyle(color: AppColors.danger)),
+                child: Text(_reserved ? '不买了，取消预扣' : '删除这笔', style: const TextStyle(color: AppColors.danger)),
               ),
             ],
           ],
@@ -249,7 +383,11 @@ class _PartnerEntrySheet extends ConsumerWidget {
             style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
-          Text('${entry.category} · ${friendlyDate(entry.occurredOn)} · $who 记的'),
+          if (entry.title.isNotEmpty) ...[
+            Text(entry.title, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+          ],
+          Text('${entry.category} · ${friendlyDate(entry.occurredOn)} · $who ${entry.reserved ? '预扣的，还没买' : '记的'}'),
           const SizedBox(height: 16),
           Text('这是 TA 的账目，只能查看。', style: TextStyle(color: theme.colorScheme.outline, fontSize: 13)),
           if (ref.watch(servicesProvider).offline != null) ...[

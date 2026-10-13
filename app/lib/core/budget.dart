@@ -12,6 +12,14 @@ const allLevels = [levelMonth80, levelMonth100, levelMonth120, levelPeriodOver];
 
 const usedPercentOverflow = 999;
 
+/// How long into the next month a month's income can still be recorded
+/// before the month is settled.
+const incomeGraceDays = 7;
+
+/// The income-plan bucket for members not listed by user id (e.g. a partner
+/// who has not joined yet).
+const othersKey = '*';
+
 class Month implements Comparable<Month> {
   const Month(this.year, this.month);
 
@@ -71,6 +79,7 @@ class Goal {
     required this.endMonth,
     required this.plannedIncome,
     required this.savingsTarget,
+    this.incomePlan = const {},
   });
 
   final Month startMonth;
@@ -78,14 +87,21 @@ class Goal {
   final int plannedIncome;
   final int savingsTarget;
 
+  /// Each member's expected monthly income by user id, with [othersKey]
+  /// covering everyone not listed. Goals created before per-member planning
+  /// leave it empty: [plannedIncome] is then spread evenly over the period
+  /// as a single household bucket.
+  final Map<String, int> incomePlan;
+
   int get totalMonths => startMonth.monthsUntil(endMonth);
 
   bool contains(Month m) => m.index >= startMonth.index && m.index <= endMonth.index;
 }
 
 class BudgetEntry {
-  const BudgetEntry({required this.type, required this.amount, required this.date});
+  const BudgetEntry({required this.type, required this.amount, required this.date, this.owner = ''});
 
+  final String owner;
   final String type;
   final int amount;
   final String date; // YYYY-MM-DD
@@ -95,6 +111,7 @@ class Snapshot {
   const Snapshot({
     required this.month,
     required this.inPeriod,
+    required this.expectedIncome,
     required this.budget,
     required this.spentBefore,
     required this.monthsLeft,
@@ -115,6 +132,7 @@ class Snapshot {
 
   final String month;
   final bool inPeriod;
+  final int expectedIncome;
   final int budget;
   final int spentBefore;
   final int monthsLeft;
@@ -135,6 +153,7 @@ class Snapshot {
   Map<String, Object> toJson() => {
     'month': month,
     'in_period': inPeriod,
+    'expected_income': expectedIncome,
     'budget': budget,
     'spent_before': spentBefore,
     'months_left': monthsLeft,
@@ -158,7 +177,8 @@ class Snapshot {
 /// entries. [today] is the local calendar date.
 Snapshot computeSnapshot(Goal g, Iterable<BudgetEntry> entries, Month month, DateTime today) {
   final inPeriod = g.contains(month);
-  final budget = g.plannedIncome - g.savingsTarget;
+  final income = expectedIncome(g, entries, today);
+  final budget = income - g.savingsTarget;
 
   var monthSpent = 0, monthIncome = 0, periodSpent = 0, periodIncome = 0, spentBefore = 0;
 
@@ -218,6 +238,7 @@ Snapshot computeSnapshot(Goal g, Iterable<BudgetEntry> entries, Month month, Dat
   return Snapshot(
     month: month.toString(),
     inPeriod: inPeriod,
+    expectedIncome: income,
     budget: budget,
     spentBefore: spentBefore,
     monthsLeft: monthsLeft,
@@ -235,6 +256,80 @@ Snapshot computeSnapshot(Goal g, Iterable<BudgetEntry> entries, Month month, Dat
     daysLeft: daysLeft,
     dailyAllowance: dailyAllowance,
   );
+}
+
+/// [bucket]'s expected income in the [k]-th period month.
+int plannedIncomeOf(Goal g, String bucket, int k) {
+  if (g.incomePlan.isEmpty) {
+    final n = g.totalMonths;
+    return g.plannedIncome * (k + 1) ~/ n - g.plannedIncome * k ~/ n;
+  }
+  return g.incomePlan[bucket] ?? 0;
+}
+
+/// The income-plan bucket an entry [owner] belongs to.
+String incomeBucket(Goal g, String owner) => g.incomePlan.containsKey(owner) ? owner : othersKey;
+
+/// Every income-plan bucket of [g], [othersKey] first.
+List<String> incomeBuckets(Goal g) => [othersKey, ...g.incomePlan.keys.where((b) => b != othersKey)];
+
+/// Income recorded per bucket in each period month (index 0 = start month).
+Map<String, List<int>> actualIncome(Goal g, Iterable<BudgetEntry> entries) {
+  final n = g.totalMonths;
+  final actual = {for (final b in incomeBuckets(g)) b: List.filled(n, 0)};
+  for (final e in entries) {
+    if (e.type != typeIncome) continue;
+    final Month em;
+    try {
+      em = Month.ofDate(e.date);
+    } on Object {
+      continue;
+    }
+    if (!g.contains(em)) continue;
+    actual[incomeBucket(g, e.owner)]![em.index - g.startMonth.index] += e.amount;
+  }
+  return actual;
+}
+
+/// Estimates the period's total income, member by member and month by month:
+/// - later months count the plan;
+/// - the current month, and the previous one during its grace period, count
+///   what arrived but at least the plan, so income that is merely not
+///   recorded yet never tightens the limit;
+/// - settled months count what arrived, or the plan for a member who
+///   recorded nothing at all that month (most likely forgot).
+int expectedIncome(Goal g, Iterable<BudgetEntry> entries, DateTime today) {
+  final actual = actualIncome(g, entries);
+  final todayIdx = Month.of(today).index;
+  var total = 0;
+  for (var k = 0; k < g.totalMonths; k++) {
+    final idx = g.startMonth.index + k;
+    final open = idx >= todayIdx || (idx == todayIdx - 1 && today.day <= incomeGraceDays);
+    for (final b in actual.keys) {
+      final planned = plannedIncomeOf(g, b, k);
+      final got = actual[b]![k];
+      if (idx > todayIdx) {
+        total += planned;
+      } else if (open) {
+        total += got > planned ? got : planned;
+      } else {
+        total += got > 0 ? got : planned;
+      }
+    }
+  }
+  return total;
+}
+
+/// Buckets that expected income in [month] but recorded none (app only:
+/// drives the "record last month's income" reminder).
+List<String> missingIncome(Goal g, Iterable<BudgetEntry> entries, Month month) {
+  if (!g.contains(month)) return const [];
+  final k = month.index - g.startMonth.index;
+  final actual = actualIncome(g, entries);
+  return [
+    for (final b in actual.keys)
+      if (plannedIncomeOf(g, b, k) > 0 && actual[b]![k] == 0) b,
+  ];
 }
 
 /// Alert levels reached by [s], in ascending severity.

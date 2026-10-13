@@ -57,6 +57,7 @@ List<String> unknownPlaceholders(String template) => RegExp(
 const previewSnapshot = Snapshot(
   month: '',
   inPeriod: true,
+  expectedIncome: 4000000,
   budget: 2000000,
   spentBefore: 0,
   monthsLeft: 3,

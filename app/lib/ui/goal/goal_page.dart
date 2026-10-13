@@ -20,9 +20,13 @@ class _GoalPageState extends ConsumerState<GoalPage> {
   GoalRecord? _editing;
   late Month _start;
   late Month _end;
-  final _income = TextEditingController();
+  final _myIncome = TextEditingController();
+  final _partnerIncome = TextEditingController();
   final _target = TextEditingController();
   bool _busy = false;
+
+  /// Combined monthly income of a goal saved before per-member planning.
+  int? _legacyMonthly;
 
   @override
   void initState() {
@@ -35,22 +39,41 @@ class _GoalPageState extends ConsumerState<GoalPage> {
     _editing = g;
     _start = g?.startMonth ?? now;
     _end = g?.endMonth ?? Month(now.year, 12);
-    _income.text = g == null ? '' : centsToInput(g.plannedIncome);
     _target.text = g == null ? '' : centsToInput(g.savingsTarget);
+
+    final plan = g?.incomePlan ?? const <String, int>{};
+    final me = ref.read(currentUserIdProvider);
+    final partner = ref.read(meAndPartnerProvider).partner?.id;
+    // "*" is whoever of us is not listed by id (not joined when it was saved)
+    final mine = plan[me] ?? (plan.containsKey(partner) ? plan[othersKey] : null);
+    final theirs = plan[partner] ?? (plan.containsKey(me) ? plan[othersKey] : null);
+    _myIncome.text = mine == null ? '' : centsToInput(mine);
+    _partnerIncome.text = theirs == null ? '' : centsToInput(theirs);
+    _legacyMonthly = g != null && plan.isEmpty ? g.plannedIncome ~/ g.goal.totalMonths : null;
   }
 
   @override
   void dispose() {
-    _income.dispose();
+    _myIncome.dispose();
+    _partnerIncome.dispose();
     _target.dispose();
     super.dispose();
   }
 
+  /// The income plan the form describes, or null while incomplete.
+  Map<String, int>? _plan() {
+    final mine = parseYuan(_myIncome.text);
+    final theirs = parseYuan(_partnerIncome.text);
+    if (mine == null || theirs == null) return null;
+    final partner = ref.read(meAndPartnerProvider).partner?.id;
+    return {ref.read(currentUserIdProvider): mine, partner ?? othersKey: theirs};
+  }
+
   Future<void> _save() async {
-    final income = parseYuan(_income.text);
+    final plan = _plan();
     final target = parseYuan(_target.text);
-    if (income == null || target == null) {
-      showMessage(context, '请填写计划收入和攒钱目标');
+    if (plan == null || target == null) {
+      showMessage(context, '请填写两人每月的预期收入和攒钱目标（没有收入可以填 0）');
       return;
     }
     setState(() => _busy = true);
@@ -58,7 +81,7 @@ class _GoalPageState extends ConsumerState<GoalPage> {
       context,
       () => ref
           .read(repositoryProvider)
-          .saveGoal(id: _editing?.id, start: _start, end: _end, plannedIncome: income, savingsTarget: target),
+          .saveGoal(id: _editing?.id, start: _start, end: _end, incomePlan: plan, savingsTarget: target),
     );
     if (!mounted) return;
     setState(() => _busy = false);
@@ -94,17 +117,26 @@ class _GoalPageState extends ConsumerState<GoalPage> {
     final theme = Theme.of(context);
     final goals = ref.watch(goalsProvider).value ?? const <GoalRecord>[];
     final entries = ref.watch(entriesProvider).value ?? const <Entry>[];
+    final members = ref.watch(meAndPartnerProvider);
+    final partnerName = members.partner?.displayName ?? 'TA';
     final now = Month.of(DateTime.now());
 
-    final income = parseYuan(_income.text);
+    final plan = _plan();
     final target = parseYuan(_target.text);
     final months = _start.monthsUntil(_end);
+    Goal? goal;
     Snapshot? preview;
-    if (income != null && target != null && months > 0) {
-      final g = Goal(startMonth: _start, endMonth: _end, plannedIncome: income, savingsTarget: target);
-      final t = today();
-      final m = g.contains(now) ? now : _start;
-      preview = computeSnapshot(g, entries.map((e) => e.toBudget()), m, t);
+    if (plan != null && target != null && months > 0) {
+      final monthly = plan.values.fold(0, (a, b) => a + b);
+      goal = Goal(
+        startMonth: _start,
+        endMonth: _end,
+        plannedIncome: monthly * months,
+        savingsTarget: target,
+        incomePlan: plan,
+      );
+      final m = goal.contains(now) ? now : _start;
+      preview = computeSnapshot(goal, entries.map((e) => e.toBudget()), m, today());
     }
 
     return Scaffold(
@@ -171,16 +203,20 @@ class _GoalPageState extends ConsumerState<GoalPage> {
                 const SizedBox(height: 4),
                 Text('共 $months 个月', style: TextStyle(fontSize: 12, color: theme.colorScheme.outline)),
                 const SizedBox(height: 16),
-                TextField(
-                  controller: _income,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-                  decoration: const InputDecoration(
-                    labelText: '计划期内两人总收入',
-                    prefixText: '¥ ',
-                    helperText: '例如两人一年工资合计 12 万，就填 120000',
+                if (_legacyMonthly != null) ...[
+                  Text(
+                    '以前填的是两人合计，平均每月 ${yuan(_legacyMonthly!)}，现在请两人分别填写',
+                    style: const TextStyle(fontSize: 13, color: AppColors.warning),
                   ),
-                  onChanged: (_) => setState(() {}),
+                  const SizedBox(height: 8),
+                ],
+                _IncomeField(controller: _myIncome, label: '我每月到手（预期）', onChanged: () => setState(() {})),
+                const SizedBox(height: 12),
+                _IncomeField(
+                  controller: _partnerIncome,
+                  label: '$partnerName每月到手（预期）',
+                  helper: members.partner == null ? 'TA 还没加入也可以先填，加入后自动算到 TA 名下' : null,
+                  onChanged: () => setState(() {}),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -193,13 +229,21 @@ class _GoalPageState extends ConsumerState<GoalPage> {
               ],
             ),
           ),
-          if (preview != null) ...[
+          if (preview != null && goal != null) ...[
             const SizedBox(height: 12),
             SectionCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('算一算', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  _IncomePreview(
+                    goal: goal,
+                    snapshot: preview,
+                    entries: entries,
+                    myId: members.me?.id ?? '',
+                    partnerName: partnerName,
+                  ),
                   const SizedBox(height: 8),
                   if (preview.budget <= 0)
                     const Text('攒钱目标不低于计划收入，每个月的可花额度会是 0，确定吗？', style: TextStyle(color: AppColors.danger))
@@ -213,8 +257,10 @@ class _GoalPageState extends ConsumerState<GoalPage> {
                   ],
                   const SizedBox(height: 8),
                   Text(
-                    '每月限额是动态的：哪个月花超了，之后几个月会自动收紧；省下来了，之后就宽松一点。',
-                    style: TextStyle(fontSize: 12, color: theme.colorScheme.outline),
+                    '每月限额是动态的：哪个月花超了，之后几个月会自动收紧；省下来了，之后就宽松一点。\n'
+                    '收入也按实际到账修正：上个月的收入可以在次月 $incomeGraceDays 号前补记，'
+                    '之后按实际结算，多了放宽、少了收紧；某人整月没记收入就按预期算。',
+                    style: TextStyle(fontSize: 12, color: theme.colorScheme.outline, height: 1.5),
                   ),
                 ],
               ),
@@ -237,7 +283,7 @@ class _GoalPageState extends ConsumerState<GoalPage> {
                   for (final g in goals)
                     ListTile(
                       title: Text('${g.startMonth.label} - ${g.endMonth.label}'),
-                      subtitle: Text('收入 ${yuan(g.plannedIncome)} · 攒 ${yuan(g.savingsTarget)}'),
+                      subtitle: Text('预期收入 ${yuan(g.plannedIncome)} · 攒 ${yuan(g.savingsTarget)}'),
                       trailing: g.id == _editing?.id ? const Icon(Icons.edit_rounded) : null,
                       onTap: () => setState(() => _load(g)),
                     ),
@@ -276,6 +322,78 @@ class _MonthField extends StatelessWidget {
         decoration: InputDecoration(labelText: label),
         child: Text(value.label),
       ),
+    );
+  }
+}
+
+class _IncomeField extends StatelessWidget {
+  const _IncomeField({required this.controller, required this.label, required this.onChanged, this.helper});
+
+  final TextEditingController controller;
+  final String label;
+  final String? helper;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+      decoration: InputDecoration(labelText: label, prefixText: '¥ ', helperText: helper),
+      onChanged: (_) => onChanged(),
+    );
+  }
+}
+
+/// Expected vs. corrected income, and what has arrived this month.
+class _IncomePreview extends StatelessWidget {
+  const _IncomePreview({
+    required this.goal,
+    required this.snapshot,
+    required this.entries,
+    required this.myId,
+    required this.partnerName,
+  });
+
+  final Goal goal;
+  final Snapshot snapshot;
+  final List<Entry> entries;
+  final String myId;
+  final String partnerName;
+
+  @override
+  Widget build(BuildContext context) {
+    final outline = Theme.of(context).colorScheme.outline;
+    final diff = snapshot.expectedIncome - goal.plannedIncome;
+    final month = Month.parse(snapshot.month);
+    final k = month.index - goal.startMonth.index;
+    final actual = actualIncome(goal, entries.map((e) => e.toBudget()));
+    final mine = incomeBucket(goal, myId);
+    final theirs = goal.incomePlan.keys.firstWhere((b) => b != mine, orElse: () => othersKey);
+
+    String arrived(String who, String bucket) =>
+        '$who ${yuan(actual[bucket]?[k] ?? 0)} / 预期 ${yuan(plannedIncomeOf(goal, bucket, k))}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('计划期 ${goal.totalMonths} 个月，预期两人共收入 ${yuan(goal.plannedIncome)}'),
+        const SizedBox(height: 4),
+        Text(
+          diff == 0
+              ? '按实际到账修正后：和预期一致'
+              : '按实际到账修正后：${yuan(snapshot.expectedIncome)}（比预期${diff > 0 ? '多' : '少'} ${yuan(diff.abs())}）',
+          style: TextStyle(color: diff < 0 ? AppColors.warning : null),
+        ),
+        if (k >= 0 && k < goal.totalMonths) ...[
+          const SizedBox(height: 4),
+          Text(
+            '${month.month}月已到账：${arrived('我', mine)}；${arrived(partnerName, theirs)}',
+            style: TextStyle(fontSize: 13, color: outline),
+          ),
+        ],
+      ],
     );
   }
 }

@@ -20,9 +20,10 @@ void main() {
           endMonth: Month.parse(g['end_month']),
           plannedIncome: g['planned_income'],
           savingsTarget: g['savings_target'],
+          incomePlan: (g['income_plan'] as Map<String, dynamic>? ?? const {}).cast<String, int>(),
         );
         final entries = (c['entries'] as List).cast<Map<String, dynamic>>().map(
-          (e) => BudgetEntry(type: e['type'], amount: e['amount'], date: e['date']),
+          (e) => BudgetEntry(owner: e['owner'] ?? '', type: e['type'], amount: e['amount'], date: e['date']),
         );
         final today = DateTime.parse(c['today']);
 
@@ -62,6 +63,7 @@ void main() {
     const s = Snapshot(
       month: '2026-10',
       inPeriod: true,
+      expectedIncome: 0,
       budget: 0,
       spentBefore: 0,
       monthsLeft: 3,

@@ -13,12 +13,14 @@ type fixtureFile struct {
 	Cases []struct {
 		Name string `json:"name"`
 		Goal struct {
-			StartMonth    string `json:"start_month"`
-			EndMonth      string `json:"end_month"`
-			PlannedIncome int64  `json:"planned_income"`
-			SavingsTarget int64  `json:"savings_target"`
+			StartMonth    string           `json:"start_month"`
+			EndMonth      string           `json:"end_month"`
+			PlannedIncome int64            `json:"planned_income"`
+			SavingsTarget int64            `json:"savings_target"`
+			IncomePlan    map[string]int64 `json:"income_plan"`
 		} `json:"goal"`
 		Entries []struct {
+			Owner  string `json:"owner"`
 			Type   string `json:"type"`
 			Amount int64  `json:"amount"`
 			Date   string `json:"date"`
@@ -59,10 +61,11 @@ func TestSharedFixtures(t *testing.T) {
 				EndMonth:      mustMonth(t, c.Goal.EndMonth),
 				PlannedIncome: c.Goal.PlannedIncome,
 				SavingsTarget: c.Goal.SavingsTarget,
+				IncomePlan:    c.Goal.IncomePlan,
 			}
 			entries := make([]Entry, len(c.Entries))
 			for i, e := range c.Entries {
-				entries[i] = Entry{Type: e.Type, Amount: e.Amount, Date: e.Date}
+				entries[i] = Entry{Owner: e.Owner, Type: e.Type, Amount: e.Amount, Date: e.Date}
 			}
 			today, err := time.Parse("2006-01-02", c.Today)
 			if err != nil {
