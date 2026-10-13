@@ -31,7 +31,8 @@ source "$ROOT/tools/app-config.sh"
 export FLUTTER_SUPPRESS_ANALYTICS=true
 
 cd "$ROOT/app"
-install_ca "$ROOT/app/assets/ca.crt"
+# the trial build talks to no server, so it carries no certificate either
+if [[ $OFFLINE == true ]]; then : > "$ROOT/app/assets/ca.crt"; else install_ca "$ROOT/app/assets/ca.crt"; fi
 trap ': > "$ROOT/app/assets/ca.crt"' EXIT
 
 flutter build apk "$MODE" --target-platform android-arm64 \

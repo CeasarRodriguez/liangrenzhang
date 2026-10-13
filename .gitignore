@@ -29,8 +29,5 @@ app/ohos/local.properties
 .vscode/
 commandline-tools-*.zip
 
-# local Claude Code settings
-.claude/
-
 # machine-specific toolchain location
 tools/dev-env.local.sh

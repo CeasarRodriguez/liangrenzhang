@@ -44,10 +44,12 @@ rsync -a --delete \
   --exclude ohos/oh-package-lock.json5 \
   "$ROOT/app/" "$MIRROR/app/"
 rsync -a --delete "$ROOT/shared/" "$MIRROR/shared/"
-install_ca "$MIRROR/app/assets/ca.crt"
+if [[ $OFFLINE == true ]]; then : > "$MIRROR/app/assets/ca.crt"; else install_ca "$MIRROR/app/assets/ca.crt"; fi
 
 # Push Kit client id (AppGallery Connect → 项目设置 → 应用 → Client ID)
-if [[ -n ${HUAWEI_APP_CLIENT_ID:-} ]]; then
+if [[ $OFFLINE == true ]]; then
+  : # the trial build has no push, so it carries no AppGallery id
+elif [[ -n ${HUAWEI_APP_CLIENT_ID:-} ]]; then
   sed -i '' "s/REPLACE_WITH_AGC_CLIENT_ID/$HUAWEI_APP_CLIENT_ID/" "$MIRROR/app/ohos/entry/src/main/module.json5"
 elif [[ -f $KEYS_DIR/harmony/client_id.txt ]]; then
   sed -i '' "s/REPLACE_WITH_AGC_CLIENT_ID/$(tr -d '[:space:]' < "$KEYS_DIR/harmony/client_id.txt")/" "$MIRROR/app/ohos/entry/src/main/module.json5"

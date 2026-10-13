@@ -54,7 +54,7 @@ if curl -fsS --cacert data/certs/ca.crt --resolve "$host:$port:127.0.0.1" "https
   echo ">> 别忘了在云厂商安全组放行 TCP $port"
 else
   echo
-  echo "!! 服务没有正常响应，请把下面的日志发给 Claude：" >&2
+  echo "!! 服务没有正常响应，最近的日志如下：" >&2
   docker compose logs --tail=50
   exit 1
 fi
