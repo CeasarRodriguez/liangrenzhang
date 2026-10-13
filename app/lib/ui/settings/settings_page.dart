@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/money.dart';
 import '../../core/theme.dart';
+import '../../data/services.dart';
 import '../../providers.dart';
 import '../alerts/alert_messages_page.dart';
 import '../alerts/alerts_history_page.dart';
@@ -212,7 +213,27 @@ class _OfflineCard extends ConsumerWidget {
           const ListTile(
             leading: Icon(Icons.phone_android_rounded),
             title: Text('单机体验版'),
-            subtitle: Text('数据只保存在这台手机上，不连服务器。「TA（模拟）」代替另一半，记账时可以切换成替 TA 记。'),
+            subtitle: Text('数据只保存在这台手机上。「TA（模拟）」代替另一半，记账时可以切换成替 TA 记。'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.dns_outlined),
+            title: const Text('连接服务器'),
+            subtitle: const Text('两人同步。体验数据留在这台手机上，不会上传'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('改用服务器？'),
+                  content: const Text('接下来填写你们自己部署的服务器地址，再注册或登录。\n\n现在的体验数据会留在这台手机上，不会上传；以后在登录页选「单机体验」还能回来。'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+                    TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('继续')),
+                  ],
+                ),
+              );
+              if (ok == true) await ref.read(switchModeProvider)(AppMode.online);
+            },
           ),
           ListTile(
             leading: const Icon(Icons.restart_alt_rounded, color: AppColors.danger),

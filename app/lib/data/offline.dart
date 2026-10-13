@@ -9,11 +9,10 @@ import '../core/ids.dart';
 import 'local_db.dart';
 import 'models.dart';
 
-/// Offline trial build (`--dart-define=LEDGER_OFFLINE=true`): no server, no
-/// login. Everything lives in the local database, the partner is simulated,
-/// and budget alerts are evaluated on the phone the same way the server does
+/// Offline trial (public build): no server, no login. Everything lives in
+/// the local database, the partner is simulated, and budget alerts are
+/// evaluated on the phone the same way the server does
 /// (server/internal/ledger/alerts.go).
-const offlineMode = bool.fromEnvironment('LEDGER_OFFLINE');
 
 const offlineUserId = 'offlineme000001';
 const offlinePartnerId = 'offlineta000001';
@@ -57,6 +56,8 @@ class OfflineBackend {
       }
     }
   }
+
+  Future<void> dispose() => _newAlerts.close();
 
   Future<void> reset() async {
     await db.clearAccountData();

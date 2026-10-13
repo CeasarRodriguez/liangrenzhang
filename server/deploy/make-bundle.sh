@@ -56,3 +56,5 @@ out="$ROOT/dist/bundle/couple-ledger-$VERSION.tar.gz"
 COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf "$out" -C "$stage" couple-ledger
 echo ">> ${out}（$(du -h "$out" | cut -f1)）"
 echo ">> 服务器地址：https://$HOST:$(grep -E '^LEDGER_PORT=' "$DEPLOY_DIR/.env" | cut -d= -f2-)"
+echo ">> 证书指纹（App 第一次连接时会让你核对）："
+openssl x509 -noout -fingerprint -sha256 -in "$CERTS/server.crt"

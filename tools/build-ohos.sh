@@ -7,7 +7,7 @@
 # 用法：tools/build-ohos.sh                # 正式构建（release 模式，调试证书签名）
 #       tools/build-ohos.sh --debug        # debug 模式
 #       tools/build-ohos.sh --install      # 构建后用 hdc 安装到连着的手机
-#       tools/build-ohos.sh --offline      # 单机体验版：不连服务器，数据只存在手机上
+#       tools/build-ohos.sh --public       # 公开版：不含服务器地址、证书和华为应用 ID
 # 签名材料见 tools/setup-signing.sh 与 docs/鸿蒙签名与推送.md
 set -euo pipefail
 
@@ -16,17 +16,15 @@ KEYS_DIR=${KEYS_DIR:-$HOME/.couple-ledger-keys}
 
 MODE=--release
 INSTALL=false
-OFFLINE=false
+PUBLIC=false
 for arg in "$@"; do
   case $arg in
     --debug) MODE=--debug ;;
     --install) INSTALL=true ;;
-    --offline) OFFLINE=true ;;
+    --public) PUBLIC=true ;;
     *) echo "未知参数：$arg" >&2; exit 1 ;;
   esac
 done
-# the trial build never contacts a server
-if [[ $OFFLINE == true ]]; then SERVER_URL=${SERVER_URL:-https://127.0.0.1:8443}; fi
 
 # shellcheck source=dev-env.sh
 source "$ROOT/tools/dev-env.sh"
@@ -44,11 +42,11 @@ rsync -a --delete \
   --exclude ohos/oh-package-lock.json5 \
   "$ROOT/app/" "$MIRROR/app/"
 rsync -a --delete "$ROOT/shared/" "$MIRROR/shared/"
-if [[ $OFFLINE == true ]]; then : > "$MIRROR/app/assets/ca.crt"; else install_ca "$MIRROR/app/assets/ca.crt"; fi
+install_ca "$MIRROR/app/assets/ca.crt"
 
 # Push Kit client id (AppGallery Connect → 项目设置 → 应用 → Client ID)
-if [[ $OFFLINE == true ]]; then
-  : # the trial build has no push, so it carries no AppGallery id
+if [[ $PUBLIC == true ]]; then
+  : # push needs the AppGallery app of whoever signs the build
 elif [[ -n ${HUAWEI_APP_CLIENT_ID:-} ]]; then
   sed -i '' "s/REPLACE_WITH_AGC_CLIENT_ID/$HUAWEI_APP_CLIENT_ID/" "$MIRROR/app/ohos/entry/src/main/module.json5"
 elif [[ -f $KEYS_DIR/harmony/client_id.txt ]]; then
@@ -62,12 +60,12 @@ unsigned="$MIRROR/app/ohos/entry/build/default/outputs/default/entry-default-uns
 rm -f "$unsigned"
 # the flutter tool exits non-zero when the project has no IDE signing config,
 # even though hvigor produced the unsigned HAP; we sign it ourselves below
-flutter build hap "$MODE" --dart-define=LEDGER_SERVER="$SERVER_URL" --dart-define=LEDGER_OFFLINE="$OFFLINE" || true
+flutter build hap "$MODE" --dart-define=LEDGER_SERVER="$SERVER_URL" || true
 [[ -f $unsigned ]] || { echo "构建失败：没有生成 HAP" >&2; exit 1; }
 
 mkdir -p "$ROOT/dist/ohos"
 kind=${MODE#--}
-if [[ $OFFLINE == true ]]; then kind=offline; fi
+if [[ $PUBLIC == true ]]; then kind=public; fi
 version=$(grep -E '^version:' "$ROOT/app/pubspec.yaml" | awk '{print $2}' | cut -d+ -f1)
 
 cert="$KEYS_DIR/harmony/debug.cer"
@@ -87,8 +85,8 @@ java -jar "$DEVECO_SDK_HOME/default/openharmony/toolchains/lib/hap-sign-tool.jar
   -appCertFile "$cert" -profileFile "$profile" -profileSigned 1 -inForm zip -signCode 1 \
   -inFile "$unsigned" -outFile "$signed"
 echo ">> $signed"
-if [[ $OFFLINE == true ]]; then
-  echo ">> 单机体验版，不连服务器"
+if [[ $PUBLIC == true ]]; then
+  echo ">> 公开版：不含服务器地址和证书"
 else
   echo ">> 服务器地址：$SERVER_URL"
 fi

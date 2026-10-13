@@ -68,3 +68,6 @@ port=$(grep -E '^LEDGER_PORT=' .env | cut -d= -f2-)
 curl -fsS --cacert data/certs/ca.crt --resolve "$(grep -E '^LEDGER_HOST=' .env | cut -d= -f2-):${port:-8443}:127.0.0.1" \
   "https://$(grep -E '^LEDGER_HOST=' .env | cut -d= -f2-):${port:-8443}/api/health" && echo && echo ">> 部署成功"
 REMOTE
+
+echo ">> 证书指纹（App 第一次连接时会让你核对）："
+openssl x509 -noout -fingerprint -sha256 -in "$DEPLOY_DIR/data/certs/server.crt"

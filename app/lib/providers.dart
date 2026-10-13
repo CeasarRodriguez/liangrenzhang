@@ -9,8 +9,12 @@ import 'data/repository.dart';
 import 'data/services.dart';
 import 'data/sync.dart';
 
-/// Overridden in main() with the initialized instance.
+/// Overridden by AppRoot with the initialized instance.
 final servicesProvider = Provider<AppServices>((ref) => throw UnimplementedError());
+
+/// Switches between the offline trial and server mode (public build only).
+/// Overridden by AppRoot, which restarts the app on the other database.
+final switchModeProvider = Provider<Future<void> Function(AppMode)>((ref) => throw UnimplementedError());
 
 final repositoryProvider = Provider((ref) => Repository(ref.watch(servicesProvider)));
 

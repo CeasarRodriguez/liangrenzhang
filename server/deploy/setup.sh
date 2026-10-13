@@ -51,6 +51,8 @@ port=${port:-8443}
 if curl -fsS --cacert data/certs/ca.crt --resolve "$host:$port:127.0.0.1" "https://$host:$port/api/health"; then
   echo
   echo ">> 部署成功：https://$host:$port"
+  echo ">> 证书指纹（App 第一次连接时会让你核对）："
+  openssl x509 -noout -fingerprint -sha256 -in data/certs/server.crt 2>/dev/null || true
   echo ">> 别忘了在云厂商安全组放行 TCP $port"
 else
   echo

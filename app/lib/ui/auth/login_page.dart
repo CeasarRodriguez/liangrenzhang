@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/services.dart';
 import '../../providers.dart';
 import '../settings/server_dialog.dart';
 import '../widgets.dart';
@@ -153,8 +154,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     TextButton.icon(
                       onPressed: () => showServerDialog(context, ref),
                       icon: const Icon(Icons.dns_outlined, size: 18),
-                      label: const Text('服务器设置'),
+                      label: Text(isPublicBuild ? '服务器：${_hostOf(ref.read(servicesProvider).serverUrl)}' : '服务器设置'),
                     ),
+                    if (isPublicBuild)
+                      TextButton(
+                        onPressed: () => ref.read(switchModeProvider)(AppMode.offline),
+                        child: const Text('先不连服务器，单机体验'),
+                      ),
                   ],
                 ),
               ),
@@ -165,3 +171,5 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 }
+
+String _hostOf(String url) => Uri.tryParse(url)?.authority ?? url;

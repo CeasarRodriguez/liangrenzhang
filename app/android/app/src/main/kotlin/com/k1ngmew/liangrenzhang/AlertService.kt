@@ -24,8 +24,11 @@ import java.security.KeyStore
 import java.security.cert.CertificateException
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import java.security.cert.Certificate
+import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLPeerUnverifiedException
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
@@ -223,20 +226,27 @@ class AlertService : Service() {
         val conn = URL(cfg.baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
         conn.connectTimeout = 15_000
         conn.readTimeout = 20_000
-        if (conn is HttpsURLConnection) cfg.socketFactory?.let { conn.sslSocketFactory = it }
+        if (conn is HttpsURLConnection) {
+            cfg.trust?.let {
+                conn.sslSocketFactory = it.socketFactory
+                conn.hostnameVerifier = it.hostnameVerifier
+            }
+        }
         return conn
     }
 
     private class AuthException : Exception()
 
-    private class Config(val baseUrl: String, val token: String, val socketFactory: SSLSocketFactory?) {
+    private class Trust(val socketFactory: SSLSocketFactory, val hostnameVerifier: HostnameVerifier)
+
+    private class Config(val baseUrl: String, val token: String, val trust: Trust?) {
         companion object {
             fun load(p: SharedPreferences): Config? {
                 if (!p.getBoolean(KEY_ENABLED, false)) return null
                 val base = p.getString(KEY_BASE_URL, "") ?: ""
                 val token = p.getString(KEY_TOKEN, "") ?: ""
                 if (base.isEmpty() || token.isEmpty()) return null
-                return Config(base, token, socketFactoryFor(p.getString(KEY_CA, "") ?: ""))
+                return Config(base, token, trustFor(p.getString(KEY_CA, "") ?: ""))
             }
         }
     }
@@ -255,6 +265,7 @@ class AlertService : Service() {
         private const val CHANNEL_ALERTS = "alerts"
         private const val ID_SERVICE = 1
         private const val ID_AUTH = 2
+        private val PEM_BLOCK = Regex("-----BEGIN CERTIFICATE-----[\\s\\S]+?-----END CERTIFICATE-----")
 
         fun prefs(ctx: Context): SharedPreferences = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -317,23 +328,37 @@ class AlertService : Service() {
             ctx.getSystemService(NotificationManager::class.java).notify(id, n)
         }
 
-        /** Trusts our own root CA in addition to the system CAs. */
-        private fun socketFactoryFor(caPem: String): SSLSocketFactory? {
-            if (caPem.isBlank()) return null
+        /**
+         * Trusts, besides the system CAs, the certificates the app passes in
+         * [pem]: our own root CA and server certificates the user confirmed
+         * by fingerprint. A confirmed server certificate is accepted as is,
+         * like the app does, even though nothing vouches for it.
+         */
+        private fun trustFor(pem: String): Trust? {
+            if (pem.isBlank()) return null
             return try {
-                val cert = CertificateFactory.getInstance("X.509")
-                    .generateCertificate(ByteArrayInputStream(caPem.toByteArray())) as X509Certificate
+                // one at a time: Android may only read the first of several concatenated PEMs
+                val factory = CertificateFactory.getInstance("X.509")
+                val certs = PEM_BLOCK.findAll(pem)
+                    .map { factory.generateCertificate(ByteArrayInputStream(it.value.toByteArray())) as X509Certificate }
+                    .toList()
+                if (certs.isEmpty()) return null
                 val ks = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
                     load(null, null)
-                    setCertificateEntry("couple-ledger-ca", cert)
+                    certs.forEachIndexed { i, cert -> setCertificateEntry("trusted-$i", cert) }
                 }
                 val custom = trustManager(ks)
                 val system = trustManager(null)
+                fun confirmed(chain: Array<out Certificate>?): Boolean {
+                    val leaf = chain?.firstOrNull() ?: return false
+                    return certs.any { it.encoded.contentEquals(leaf.encoded) }
+                }
                 val combined = object : X509TrustManager {
                     override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) =
                         system.checkClientTrusted(chain, authType)
 
                     override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+                        if (confirmed(chain)) return
                         try {
                             custom.checkServerTrusted(chain, authType)
                         } catch (e: CertificateException) {
@@ -344,9 +369,18 @@ class AlertService : Service() {
                     override fun getAcceptedIssuers(): Array<X509Certificate> =
                         custom.acceptedIssuers + system.acceptedIssuers
                 }
-                SSLContext.getInstance("TLS").apply { init(null, arrayOf(combined), null) }.socketFactory
+                val defaultVerifier = HttpsURLConnection.getDefaultHostnameVerifier()
+                val verifier = HostnameVerifier { host, session ->
+                    defaultVerifier.verify(host, session) || try {
+                        confirmed(session.peerCertificates)
+                    } catch (e: SSLPeerUnverifiedException) {
+                        false
+                    }
+                }
+                val socketFactory = SSLContext.getInstance("TLS").apply { init(null, arrayOf(combined), null) }.socketFactory
+                Trust(socketFactory, verifier)
             } catch (e: Exception) {
-                Log.e(TAG, "invalid CA certificate", e)
+                Log.e(TAG, "invalid trusted certificates", e)
                 null
             }
         }
