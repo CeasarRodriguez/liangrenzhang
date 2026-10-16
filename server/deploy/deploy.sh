@@ -67,6 +67,12 @@ docker compose ps
 port=$(grep -E '^LEDGER_PORT=' .env | cut -d= -f2-)
 curl -fsS --cacert data/certs/ca.crt --resolve "$(grep -E '^LEDGER_HOST=' .env | cut -d= -f2-):${port:-8443}:127.0.0.1" \
   "https://$(grep -E '^LEDGER_HOST=' .env | cut -d= -f2-):${port:-8443}/api/health" && echo && echo ">> 部署成功"
+if grep -qE '^COMPOSE_PROFILES=.*relay' .env; then
+  sleep 3
+  curl -fsS --cacert data/certs/ca.crt --resolve "$(grep -E '^LEDGER_HOST=' .env | cut -d= -f2-):${port:-8443}:127.0.0.1" \
+    "https://$(grep -E '^LEDGER_HOST=' .env | cut -d= -f2-):${port:-8443}/relay/health" >/dev/null &&
+    echo ">> 转发服务（两人同步）正常" || { echo "!! 转发服务没有正常响应" >&2; docker compose logs --tail=30 relay; }
+fi
 REMOTE
 
 echo ">> 证书指纹（App 第一次连接时会让你核对）："
