@@ -84,6 +84,8 @@ tools/build-ohos.sh
 - [安装到手机](docs/安装到手机.md)
 - [App 图标](docs/图标.md)
 - [奖章（含生图提示词）](docs/奖章.md)
+- [隐私政策](docs/privacy-policy.md)
+- [用户协议](docs/user-agreement.md)
 
 ## 重要文件（务必备份，不在项目目录里）
 
