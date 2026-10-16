@@ -7,7 +7,7 @@
 # 用法：tools/build-android.sh            # 正式版（连自己的服务器）
 #       tools/build-android.sh --debug    # 调试版
 #       tools/build-android.sh --public   # 公开版：不含服务器地址和证书，首次打开选单机体验、两人同步或填服务器
-#                                         # （两人同步默认用 server/deploy/.env 里的服务器转发，RELAY_URL= 可关闭）
+#                                         # （两人同步默认用 tools/relay/ 里作者的服务器转发，RELAY_URL= 可关闭）
 #       SERVER_URL=https://1.2.3.4:8443 tools/build-android.sh
 set -euo pipefail
 
@@ -46,7 +46,7 @@ out="$ROOT/dist/android/liangrenzhang-${version}-${kind}.apk"
 cp "$apk" "$out"
 echo ">> $out"
 if [[ $PUBLIC == true ]]; then
-  echo ">> 公开版：不含服务器地址和证书"
+  echo ">> 公开版：不含自己服务器的地址和证书"
   echo ">> 两人同步转发：${RELAY_URL:-（不提供）}"
 else
   echo ">> 服务器地址：$SERVER_URL"

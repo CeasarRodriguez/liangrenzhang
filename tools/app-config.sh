@@ -1,12 +1,13 @@
 # Shared by build-android.sh / build-ohos.sh: works out the server URL and
 # installs our root CA into the app assets. The public build (PUBLIC=true)
 # bakes in neither: its users pick offline trial, relay mode or their own
-# server. Relay mode uses RELAY_URL (default: the server in
-# server/deploy/.env) and trusts RELAY_CA_FILE for that connection only;
-# RELAY_URL= (empty) builds without relay mode.
+# server. Relay mode uses RELAY_URL (default: the author's relay server in
+# tools/relay/relay.env, so anyone building from source gets it) and trusts
+# RELAY_CA_FILE for that connection only; RELAY_URL= (empty) builds without
+# relay mode.
 
 CA_FILE=${CA_FILE:-$HOME/.couple-ledger-ca/ca.crt}
-RELAY_CA_FILE=${RELAY_CA_FILE:-$CA_FILE}
+RELAY_CA_FILE=${RELAY_CA_FILE:-$ROOT/tools/relay/ca.crt}
 
 server_from_env() {
   local env_file="$ROOT/server/deploy/.env" host port
@@ -19,10 +20,8 @@ server_from_env() {
 if [[ ${PUBLIC:-false} == true ]]; then
   SERVER_URL=""
   if [[ -z ${RELAY_URL+set} ]]; then
-    RELAY_URL=$(server_from_env) || {
-      RELAY_URL=""
-      echo "⚠️  找不到 server/deploy/.env，公开版不提供「两人同步」（可用 RELAY_URL=https://IP:8443 指定）" >&2
-    }
+    RELAY_URL=$(grep -E '^RELAY_URL=' "$ROOT/tools/relay/relay.env" 2>/dev/null | cut -d= -f2-) || RELAY_URL=""
+    [[ -n $RELAY_URL ]] || echo "⚠️  tools/relay/relay.env 里没有转发服务器地址，公开版不提供「两人同步」" >&2
   fi
 else
   RELAY_URL=""
@@ -49,6 +48,10 @@ install_ca() {
 install_relay_ca() {
   if [[ -z ${RELAY_URL:-} ]]; then
     : > "$1"
+  elif [[ -f $RELAY_CA_FILE ]] && grep -q 'PRIVATE KEY' "$RELAY_CA_FILE"; then
+    # the file ends up in a public app: never ship a key by mistake
+    echo "转发根证书 ${RELAY_CA_FILE} 里含有私钥，拒绝打包" >&2
+    exit 1
   elif [[ -f $RELAY_CA_FILE ]]; then
     cp "$RELAY_CA_FILE" "$1"
   else

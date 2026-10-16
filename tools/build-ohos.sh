@@ -7,8 +7,9 @@
 # 用法：tools/build-ohos.sh                # 正式构建（release 模式，调试证书签名）
 #       tools/build-ohos.sh --debug        # debug 模式
 #       tools/build-ohos.sh --install      # 构建后用 hdc 安装到连着的手机
-#       tools/build-ohos.sh --public       # 公开版：不含服务器地址、证书和华为应用 ID
-#                                          # （两人同步默认用 server/deploy/.env 里的服务器转发，RELAY_URL= 可关闭）
+#       tools/build-ohos.sh --public       # 公开版：不含自己服务器的地址、证书和华为应用 ID，
+#                                          # 没有自己的服务器时用它（可和 --install 一起用）；
+#                                          # 两人同步默认用 tools/relay/ 里作者的服务器转发，RELAY_URL= 可关闭
 # 签名材料见 tools/setup-signing.sh 与 docs/鸿蒙签名与推送.md
 set -euo pipefail
 
@@ -88,7 +89,7 @@ java -jar "$DEVECO_SDK_HOME/default/openharmony/toolchains/lib/hap-sign-tool.jar
   -inFile "$unsigned" -outFile "$signed"
 echo ">> $signed"
 if [[ $PUBLIC == true ]]; then
-  echo ">> 公开版：不含服务器地址和证书"
+  echo ">> 公开版：不含自己服务器的地址和证书"
   echo ">> 两人同步转发：${RELAY_URL:-（不提供）}"
 else
   echo ">> 服务器地址：$SERVER_URL"
