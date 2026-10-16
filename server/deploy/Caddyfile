@@ -17,6 +17,8 @@
 	# relay mode (optional "relay" compose profile): encrypted mailbox for
 	# couples using the public build without their own server
 	handle /relay/* {
+		# no access log: the relay keeps client IPs only in memory, for rate limiting
+		log_skip
 		reverse_proxy relay:8091 {
 			flush_interval -1
 		}
