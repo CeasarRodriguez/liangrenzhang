@@ -3,9 +3,11 @@
 design/icon_foreground.png (transparent PNG of the piggy bank).
 
 Needs Pillow:  python3 -m pip install pillow
-Usage:         python3 tools/make-icons.py
+Usage:         python3 tools/make-icons.py           # everything
+               python3 tools/make-icons.py --store   # AppGallery icons only
 """
 import json
+import sys
 from pathlib import Path
 
 from PIL import Image
@@ -78,8 +80,21 @@ def main() -> None:
 
     # in-app logo (login page)
     place(subj, 512, 0.96).save(ROOT / "app/assets/logo.png")
+    store_icons(subj)
     print("icons generated")
 
 
+def store_icons(subj: Image.Image) -> None:
+    """AppGallery listing icon: must match the icon in the package (the
+    layered icon above), as a full square without transparency or rounded
+    corners; the store applies its own mask."""
+    for size in (1024, 216):
+        place(subj, size, 0.62, BACKGROUND).convert("RGB").save(ROOT / f"design/appgallery_icon_{size}.png")
+
+
 if __name__ == "__main__":
-    main()
+    if "--store" in sys.argv:
+        store_icons(subject())
+        print("store icons generated")
+    else:
+        main()
