@@ -54,6 +54,9 @@ chown -R 10001:10001 data/pb_data data/relay
 chmod 600 .env
 chmod +x backup.sh
 docker compose up -d
+# the Caddyfile is bind-mounted as a single file: a new copy only takes
+# effect once the container is recreated
+docker compose up -d --force-recreate caddy
 # daily backup at 04:15 (idempotent crontab entry)
 { crontab -l 2>/dev/null | grep -v 'couple-ledger/backup.sh' || true
   echo "15 4 * * * $PWD/backup.sh >> $PWD/backups/backup.log 2>&1"; } | crontab -

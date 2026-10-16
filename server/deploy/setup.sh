@@ -28,6 +28,9 @@ chmod +x backup.sh
 
 echo ">> 启动服务"
 docker compose up -d --remove-orphans
+# the Caddyfile is bind-mounted as a single file: a new copy only takes
+# effect once the container is recreated
+docker compose up -d --force-recreate caddy
 # daily backup at 04:15 (idempotent crontab entry)
 command -v crontab >/dev/null 2>&1 || apt-get install -y cron || true
 if command -v crontab >/dev/null 2>&1; then

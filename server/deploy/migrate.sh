@@ -48,6 +48,7 @@ docker image inspect "$caddy" >/dev/null 2>&1 || gunzip -c images/"$(echo "$cadd
 mkdir -p data/relay
 chown -R 10001:10001 data/pb_data data/relay
 docker compose up -d
+docker compose up -d --force-recreate caddy
 ( crontab -l 2>/dev/null | grep -v 'couple-ledger/backup.sh' ; echo "15 4 * * * $PWD/backup.sh >> $PWD/backups/backup.log 2>&1" ) | crontab -
 for i in $(seq 1 30); do
   [[ $(docker inspect -f '{{.State.Health.Status}}' couple-ledger-pocketbase-1 2>/dev/null) == healthy ]] && break
