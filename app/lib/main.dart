@@ -9,18 +9,21 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final native = NativeBridge();
-  String? caPem;
-  try {
-    caPem = await rootBundle.loadString('assets/ca.crt');
-  } on Object {
-    caPem = null;
+  Future<String?> pem(String asset) async {
+    try {
+      final text = await rootBundle.loadString(asset);
+      return text.trim().isEmpty ? null : text;
+    } on Object {
+      return null;
+    }
   }
 
   final env = AppEnv(
     native: native,
     platform: await native.platform(),
     dir: await native.filesDir(),
-    caPem: (caPem?.trim().isEmpty ?? true) ? null : caPem,
+    caPem: await pem('assets/ca.crt'),
+    relayCaPem: await pem('assets/relay_ca.crt'),
   );
   final services = await AppServices.open(env);
 

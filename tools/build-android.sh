@@ -6,7 +6,8 @@
 #
 # 用法：tools/build-android.sh            # 正式版（连自己的服务器）
 #       tools/build-android.sh --debug    # 调试版
-#       tools/build-android.sh --public   # 公开版：不含服务器地址和证书，首次打开选单机体验或填服务器
+#       tools/build-android.sh --public   # 公开版：不含服务器地址和证书，首次打开选单机体验、两人同步或填服务器
+#                                         # （两人同步默认用 server/deploy/.env 里的服务器转发，RELAY_URL= 可关闭）
 #       SERVER_URL=https://1.2.3.4:8443 tools/build-android.sh
 set -euo pipefail
 
@@ -30,10 +31,11 @@ export FLUTTER_SUPPRESS_ANALYTICS=true
 
 cd "$ROOT/app"
 install_ca "$ROOT/app/assets/ca.crt"
-trap ': > "$ROOT/app/assets/ca.crt"' EXIT
+install_relay_ca "$ROOT/app/assets/relay_ca.crt"
+trap ': > "$ROOT/app/assets/ca.crt"; : > "$ROOT/app/assets/relay_ca.crt"' EXIT
 
 flutter build apk "$MODE" --target-platform android-arm64 \
-  --dart-define=LEDGER_SERVER="$SERVER_URL"
+  --dart-define=LEDGER_SERVER="$SERVER_URL" --dart-define=LEDGER_RELAY="$RELAY_URL"
 
 mkdir -p "$ROOT/dist/android"
 kind=${MODE#--}
@@ -45,6 +47,7 @@ cp "$apk" "$out"
 echo ">> $out"
 if [[ $PUBLIC == true ]]; then
   echo ">> 公开版：不含服务器地址和证书"
+  echo ">> 两人同步转发：${RELAY_URL:-（不提供）}"
 else
   echo ">> 服务器地址：$SERVER_URL"
 fi

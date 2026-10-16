@@ -7,13 +7,15 @@ import 'data/services.dart';
 import 'providers.dart';
 import 'ui/auth/household_setup_page.dart';
 import 'ui/auth/login_page.dart';
+import 'ui/auth/relay_pair_page.dart';
 import 'ui/auth/welcome_page.dart';
 import 'ui/home/home_shell.dart';
 
 const appName = '两人账';
 
 /// Holds the [AppServices] of the current mode and swaps them (with a fresh
-/// provider scope) when the user switches between offline trial and server.
+/// provider scope) when the user switches between offline trial, relay mode
+/// and server.
 class AppRoot extends StatefulWidget {
   const AppRoot({super.key, required this.env, required this.initial});
 
@@ -97,6 +99,8 @@ class SessionGate extends ConsumerWidget {
         SessionStage.needsServer => const WelcomePage(key: ValueKey('welcome')),
         SessionStage.loggedOut => const LoginPage(key: ValueKey('login')),
         SessionStage.needsHousehold => const HouseholdSetupPage(key: ValueKey('household')),
+        SessionStage.needsPairing => const RelayPairPage(key: ValueKey('pair')),
+        SessionStage.restoring => const RelayRestorePage(key: ValueKey('restore')),
         SessionStage.ready => const HomeShell(key: ValueKey('home')),
       },
     );

@@ -3,7 +3,9 @@ import 'package:sembast/sembast.dart';
 import 'models.dart';
 
 /// Local cache of everything the app shows, so it works offline and
-/// renders instantly. The server stays the source of truth.
+/// renders instantly. With a server, the server stays the source of truth;
+/// in the offline trial and relay mode this is the only copy (relay mode
+/// also keeps one on the partner's phone).
 class LocalDb {
   LocalDb(this.db);
 
@@ -107,8 +109,12 @@ class LocalDb {
   Stream<Map<String, String>> watchNotes() =>
       notes.query().onSnapshots(db).map((list) => {for (final s in list) s.key: (s.value['note'] as String?) ?? ''});
 
+  /// Relay mode deletes goals and alert copy by writing a tombstone, so the
+  /// partner's phone learns about the deletion too.
+  static final _alive = Finder(filter: Filter.notEquals('_deleted', true));
+
   Stream<List<GoalRecord>> watchGoals() => goals
-      .query()
+      .query(finder: _alive)
       .onSnapshots(db)
       .map(
         (list) =>
@@ -132,7 +138,7 @@ class LocalDb {
       );
 
   Stream<List<AlertMessage>> watchAlertMessages() => alertMessages
-      .query()
+      .query(finder: _alive)
       .onSnapshots(db)
       .map(
         (list) =>
@@ -140,7 +146,8 @@ class LocalDb {
               ..sort((a, b) => a.created.compareTo(b.created)),
       );
 
-  /// Clears everything except app settings such as the server address.
+  /// Clears everything except app settings such as the server address,
+  /// including the relay pairing.
   Future<void> clearAccountData() async {
     await db.transaction((txn) async {
       for (final store in [entries, notes, goals, members, households, alerts, alertMessages]) {
@@ -149,7 +156,7 @@ class LocalDb {
       await outbox.delete(txn);
       final keys = await settings.findKeys(txn);
       for (final k in keys) {
-        if (k.startsWith('sync:') || k == 'auth') await settings.record(k).delete(txn);
+        if (k.startsWith('sync:') || k.startsWith('relay:') || k == 'auth') await settings.record(k).delete(txn);
       }
     });
   }

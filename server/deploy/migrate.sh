@@ -45,7 +45,8 @@ version=$(grep -E '^LEDGER_VERSION=' .env | cut -d= -f2-)
 caddy=$(grep -E '^CADDY_IMAGE=' .env | cut -d= -f2-)
 docker image inspect "couple-ledger-server:$version" >/dev/null 2>&1 || gunzip -c images/couple-ledger-server_"${version}"_*.tar.gz | docker load
 docker image inspect "$caddy" >/dev/null 2>&1 || gunzip -c images/"$(echo "$caddy" | tr ':/' '__')"_*.tar.gz | docker load
-chown -R 10001:10001 data/pb_data
+mkdir -p data/relay
+chown -R 10001:10001 data/pb_data data/relay
 docker compose up -d
 ( crontab -l 2>/dev/null | grep -v 'couple-ledger/backup.sh' ; echo "15 4 * * * $PWD/backup.sh >> $PWD/backups/backup.log 2>&1" ) | crontab -
 for i in $(seq 1 30); do

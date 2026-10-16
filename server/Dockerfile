@@ -7,6 +7,8 @@ FROM ${RUNTIME_IMAGE}
 
 WORKDIR /app
 COPY .build/couple-ledger /app/couple-ledger
+# relay mode mailbox; runs as its own container (see deploy/docker-compose.yml)
+COPY .build/relay /app/relay
 # numeric uid so no passwd entry (and no RUN) is needed; deploy scripts chown the data dir
 USER 10001:10001
 EXPOSE 8090

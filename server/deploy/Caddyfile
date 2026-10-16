@@ -14,6 +14,14 @@
 
 	encode zstd gzip
 
+	# relay mode (optional "relay" compose profile): encrypted mailbox for
+	# couples using the public build without their own server
+	handle /relay/* {
+		reverse_proxy relay:8091 {
+			flush_interval -1
+		}
+	}
+
 	reverse_proxy pocketbase:8090 {
 		# keep realtime (SSE) events flowing immediately
 		flush_interval -1

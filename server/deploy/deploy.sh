@@ -34,7 +34,7 @@ done
 sed -i.bak "s/^LEDGER_VERSION=.*/LEDGER_VERSION=$VERSION/" "$DEPLOY_DIR/.env" && rm -f "$DEPLOY_DIR/.env.bak"
 
 echo ">> 上传文件到 $TARGET:$REMOTE_DIR"
-ssh "$TARGET" "mkdir -p $REMOTE_DIR/images $REMOTE_DIR/data/pb_data $REMOTE_DIR/data/caddy $REMOTE_DIR/data/certs $REMOTE_DIR/secrets $REMOTE_DIR/backups"
+ssh "$TARGET" "mkdir -p $REMOTE_DIR/images $REMOTE_DIR/data/pb_data $REMOTE_DIR/data/relay $REMOTE_DIR/data/caddy $REMOTE_DIR/data/certs $REMOTE_DIR/secrets $REMOTE_DIR/backups"
 scp "$server_tar" "$caddy_tar" "$TARGET:$REMOTE_DIR/images/"
 scp "$DEPLOY_DIR/docker-compose.yml" "$DEPLOY_DIR/Caddyfile" "$DEPLOY_DIR/.env" \
     "$DEPLOY_DIR/backup.sh" "$TARGET:$REMOTE_DIR/"
@@ -50,7 +50,7 @@ set -euo pipefail
 cd "$1"
 gunzip -c "images/$2" | docker load
 gunzip -c "images/$3" | docker load
-chown -R 10001:10001 data/pb_data
+chown -R 10001:10001 data/pb_data data/relay
 chmod 600 .env
 chmod +x backup.sh
 docker compose up -d

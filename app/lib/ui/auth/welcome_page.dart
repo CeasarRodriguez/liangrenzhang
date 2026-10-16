@@ -6,8 +6,9 @@ import '../../data/services.dart';
 import '../../providers.dart';
 import '../settings/server_dialog.dart';
 
-/// First screen of the public build: try the app offline, or connect to a
-/// server the couple deployed themselves.
+/// First screen of the public build: try the app offline, sync through the
+/// author's relay (data stays on the two phones), or connect to a server
+/// the couple deployed themselves.
 class WelcomePage extends ConsumerWidget {
   const WelcomePage({super.key});
 
@@ -45,13 +46,24 @@ class WelcomePage extends ConsumerWidget {
                     action: '开始体验',
                     onPressed: () => ref.read(switchModeProvider)(AppMode.offline),
                   ),
+                  if (bakedRelayUrl.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _Choice(
+                      icon: Icons.lock_outline_rounded,
+                      title: '两人同步',
+                      body: '两个人各用一台手机，用配对码连在一起。账目只保存在你们两台手机上；作者的服务器只转交加密后的数据，送达就删除，看不到内容。超支提醒在打开 App 时弹出。',
+                      action: '开始配对',
+                      primary: true,
+                      onPressed: () => ref.read(switchModeProvider)(AppMode.relay),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   _Choice(
                     icon: Icons.dns_rounded,
-                    title: '连接服务器',
-                    body: '两个人各用一台手机，实时同步，App 关着也能收到超支提醒。需要先自己部署服务端，方法见开源项目里的 docs/服务器部署.md。',
+                    title: '使用自己的服务器',
+                    body: '数据存在你们自己部署的服务器上，App 关着也能收到超支提醒。需要先按开源项目里的 docs/服务器部署.md 部署服务端。',
                     action: '填写服务器地址',
-                    primary: true,
+                    primary: bakedRelayUrl.isEmpty,
                     onPressed: () => showServerDialog(context, ref),
                   ),
                 ],

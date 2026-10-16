@@ -21,8 +21,8 @@ for f in images/*.tar.gz; do
   gunzip -c "$f" | docker load
 done
 
-mkdir -p data/pb_data data/caddy secrets backups
-chown -R 10001:10001 data/pb_data
+mkdir -p data/pb_data data/relay data/caddy secrets backups
+chown -R 10001:10001 data/pb_data data/relay
 chmod 600 .env data/certs/server.key
 chmod +x backup.sh
 

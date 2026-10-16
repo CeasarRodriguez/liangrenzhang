@@ -50,7 +50,9 @@ ensure_image() {
 
 echo ">> 编译服务端 linux/$ARCH"
 (cd "$SERVER_DIR" && CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
-  go build -trimpath -ldflags "-s -w" -o .build/couple-ledger .)
+  go build -trimpath -ldflags "-s -w" -o .build/couple-ledger . &&
+  CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
+  go build -trimpath -ldflags "-s -w" -o .build/relay ./cmd/relay)
 
 ensure_image "$RUNTIME_IMAGE"
 ensure_image "$CADDY_IMAGE"

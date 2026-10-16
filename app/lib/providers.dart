@@ -13,7 +13,8 @@ import 'data/sync.dart';
 /// Overridden by AppRoot with the initialized instance.
 final servicesProvider = Provider<AppServices>((ref) => throw UnimplementedError());
 
-/// Switches between the offline trial and server mode (public build only).
+/// Switches between the offline trial, relay mode and server mode (public
+/// build only).
 /// Overridden by AppRoot, which restarts the app on the other database.
 final switchModeProvider = Provider<Future<void> Function(AppMode)>((ref) => throw UnimplementedError());
 
@@ -35,7 +36,7 @@ final sessionProvider = StreamProvider<Session>((ref) {
   return _listenable(ref, ref.watch(servicesProvider).session);
 });
 
-final syncServiceProvider = StreamProvider<SyncService?>((ref) async* {
+final syncServiceProvider = StreamProvider<SyncEngine?>((ref) async* {
   final s = ref.watch(servicesProvider);
   yield s.sync;
   yield* s.syncChanges;

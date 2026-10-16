@@ -6,37 +6,55 @@ import '../core/budget.dart';
 import '../core/dates.dart';
 import '../core/ids.dart';
 import 'models.dart';
-import 'offline.dart';
+import 'relay_sync.dart';
 import 'services.dart';
 
-/// Write operations. Entries and notes work offline through the outbox;
-/// goals and settings-like changes need a connection. In the offline trial
-/// build everything is written locally only.
+/// Write operations. With a server, entries and notes work offline through
+/// the outbox; goals and settings-like changes need a connection. In the
+/// offline trial and relay mode everything is written locally first; relay
+/// mode then queues the change (never the private note) for the partner.
 class Repository {
   Repository(this.s);
 
   final AppServices s;
 
-  OfflineBackend? get _offline => s.offline;
+  bool get _local => s.isLocalFirst;
+  RelaySync? get _relay => s.relay;
 
   void _kick() {
-    final offline = _offline;
-    if (offline != null) {
-      unawaited(offline.evaluate());
-    } else {
-      unawaited(s.sync?.syncNow());
-    }
+    unawaited(s.localAlerts?.evaluate());
+    unawaited(s.sync?.syncNow());
   }
 
-  /// Offline only: writes a record as if the server had confirmed it.
-  Future<Json> _putOffline(String collection, Json body) async {
+  /// Local-first modes: writes a record as the final version and, in relay
+  /// mode, sends it to the partner's phone.
+  Future<Json> _putLocal(String collection, Json body) async {
     final now = DateTime.now().toUtc().toIso8601String();
     final store = s.db.storeFor(collection);
     final id = body['id'] as String? ?? newRecordId();
     final existing = await store.record(id).get(s.db.db) ?? const {};
-    final rec = {...existing, ...body, 'id': id, 'created': existing['created'] ?? now, 'updated': now};
+    final rec = {
+      ...existing,
+      ...body,
+      'id': id,
+      'created': existing['created'] ?? now,
+      'updated': now,
+      '_by': ?_relay?.deviceId,
+    }..remove('_pending');
     await s.db.putLocal(collection, rec);
+    await _relay?.publish(collection, rec);
     return rec;
+  }
+
+  /// Local-first modes: the offline trial simply deletes; relay mode leaves
+  /// a tombstone so the partner's phone deletes its copy too.
+  Future<void> _deleteLocal(String collection, String id) async {
+    final relay = _relay;
+    if (relay == null) return s.db.deleteRemote(collection, id);
+    final now = DateTime.now().toUtc().toIso8601String();
+    final tombstone = {'id': id, '_deleted': true, 'updated': now, '_by': relay.deviceId};
+    await s.db.storeFor(collection).record(id).put(s.db.db, tombstone);
+    await relay.publish(collection, tombstone);
   }
 
   Future<Entry> saveEntry({
@@ -51,7 +69,7 @@ class Repository {
     String? title,
   }) async {
     final existing = id == null ? null : await s.db.getEntry(id);
-    final entry = Entry(
+    var entry = Entry(
       id: id ?? newRecordId(),
       household: existing?.household ?? s.householdId,
       owner: existing?.owner ?? owner ?? s.userId,
@@ -63,18 +81,23 @@ class Repository {
       title: title ?? existing?.title ?? '',
       created: existing?.created ?? DateTime.now().toUtc().toIso8601String(),
       updated: existing?.updated ?? '',
-      pending: _offline == null,
+      pending: !_local,
     );
-    await s.db.putLocal('entries', entry.toLocal());
-    if (_offline == null) await s.db.enqueue('entries', entry.toApi());
+    if (_local) {
+      entry = Entry.fromJson(await _putLocal('entries', entry.toLocal()));
+    } else {
+      await s.db.putLocal('entries', entry.toLocal());
+      await s.db.enqueue('entries', entry.toApi());
+    }
 
-    // the simulated partner's notes would be private to them anyway
+    // the simulated partner's notes would be private to them anyway; in
+    // relay mode notes stay on this phone, they are never published
     if (note != null && entry.owner == s.userId) {
       final hadNote = await s.db.notes.record(entry.id).exists(s.db.db);
       if (note.isNotEmpty || hadNote) {
         final body = {'id': entry.id, 'entry': entry.id, 'owner': entry.owner, 'note': note};
-        await s.db.putLocal('entry_details', {...body, '_pending': _offline == null});
-        if (_offline == null) await s.db.enqueue('entry_details', body);
+        await s.db.putLocal('entry_details', {...body, '_pending': !_local});
+        if (!_local) await s.db.enqueue('entry_details', body);
       }
     }
 
@@ -125,16 +148,21 @@ class Repository {
   );
 
   Future<void> deleteEntry(Entry e) async {
-    final deleted = e.copyWith(deleted: true, pending: _offline == null);
-    await s.db.putLocal('entries', deleted.toLocal());
-    if (_offline == null) await s.db.enqueue('entries', deleted.toApi());
+    final deleted = e.copyWith(deleted: true, pending: !_local);
+    if (_local) {
+      await _putLocal('entries', deleted.toLocal());
+    } else {
+      await s.db.putLocal('entries', deleted.toLocal());
+      await s.db.enqueue('entries', deleted.toApi());
+    }
     _kick();
   }
 
+  /// Alerts are per phone in the local-first modes; read state stays local.
   Future<void> markAlertRead(AlertItem a) async {
     final raw = await s.db.alerts.record(a.id).get(s.db.db);
     if (raw == null) return;
-    if (_offline != null) {
+    if (_local) {
       await s.db.putLocal('alerts', {...raw, 'read': true});
       return;
     }
@@ -160,8 +188,8 @@ class Repository {
       'income_plan': incomePlan,
       'savings_target': savingsTarget,
     };
-    if (_offline != null) {
-      await _putOffline('goals', {...body, 'id': ?id});
+    if (_local) {
+      await _putLocal('goals', {...body, 'id': ?id});
       _kick();
       return;
     }
@@ -172,16 +200,19 @@ class Repository {
   }
 
   Future<void> deleteGoal(String id) async {
-    if (_offline != null) return s.db.deleteRemote('goals', id);
+    if (_local) {
+      await _deleteLocal('goals', id);
+      return _kick();
+    }
     await s.pb.collection('goals').delete(id);
     await s.db.deleteRemote('goals', id);
   }
 
   Future<void> addAlertMessage(String level, String text) async {
     final body = {'household': s.householdId, 'level': level, 'text': text, 'enabled': true, 'created_by': s.userId};
-    if (_offline != null) {
-      await _putOffline('alert_messages', {...body, 'is_default': false});
-      return;
+    if (_local) {
+      await _putLocal('alert_messages', {...body, 'is_default': false});
+      return _kick();
     }
     final rec = await s.pb.collection('alert_messages').create(body: body);
     await s.db.putLocal('alert_messages', rec.toJson());
@@ -189,34 +220,37 @@ class Repository {
 
   Future<void> updateAlertMessage(AlertMessage m, {String? text, bool? enabled}) async {
     final body = {'text': ?text, 'enabled': ?enabled};
-    if (_offline != null) {
-      await _putOffline('alert_messages', {...body, 'id': m.id});
-      return;
+    if (_local) {
+      await _putLocal('alert_messages', {...body, 'id': m.id});
+      return _kick();
     }
     final rec = await s.pb.collection('alert_messages').update(m.id, body: body);
     await s.db.putLocal('alert_messages', rec.toJson());
   }
 
   Future<void> deleteAlertMessage(AlertMessage m) async {
-    if (_offline != null) return s.db.deleteRemote('alert_messages', m.id);
+    if (_local) {
+      await _deleteLocal('alert_messages', m.id);
+      return _kick();
+    }
     await s.pb.collection('alert_messages').delete(m.id);
     await s.db.deleteRemote('alert_messages', m.id);
   }
 
   Future<void> updateProfile({String? name, String? color}) async {
     final body = {'name': ?name, 'color': ?color};
-    if (_offline != null) {
-      await _putOffline('users', {...body, 'id': s.userId});
-      return;
+    if (_local) {
+      await _putLocal('users', {...body, 'id': s.userId});
+      return _kick();
     }
     final rec = await s.pb.collection('users').update(s.userId, body: body);
     await s.db.putLocal('users', rec.toJson());
   }
 
   Future<void> renameHousehold(String name) async {
-    if (_offline != null) {
-      await _putOffline('households', {'id': s.householdId, 'name': name});
-      return;
+    if (_local) {
+      await _putLocal('households', {'id': s.householdId, 'name': name});
+      return _kick();
     }
     final rec = await s.pb.collection('households').update(s.householdId, body: {'name': name});
     await s.db.putLocal('households', rec.toJson());

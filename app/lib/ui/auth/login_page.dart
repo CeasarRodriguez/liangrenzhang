@@ -156,6 +156,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       icon: const Icon(Icons.dns_outlined, size: 18),
                       label: Text(isPublicBuild ? '服务器：${_hostOf(ref.read(servicesProvider).serverUrl)}' : '服务器设置'),
                     ),
+                    if (isPublicBuild && bakedRelayUrl.isNotEmpty)
+                      TextButton(
+                        onPressed: () => ref.read(switchModeProvider)(AppMode.relay),
+                        child: const Text('不用自己的服务器，两人同步'),
+                      ),
                     if (isPublicBuild)
                       TextButton(
                         onPressed: () => ref.read(switchModeProvider)(AppMode.offline),

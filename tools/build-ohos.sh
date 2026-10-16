@@ -8,6 +8,7 @@
 #       tools/build-ohos.sh --debug        # debug 模式
 #       tools/build-ohos.sh --install      # 构建后用 hdc 安装到连着的手机
 #       tools/build-ohos.sh --public       # 公开版：不含服务器地址、证书和华为应用 ID
+#                                          # （两人同步默认用 server/deploy/.env 里的服务器转发，RELAY_URL= 可关闭）
 # 签名材料见 tools/setup-signing.sh 与 docs/鸿蒙签名与推送.md
 set -euo pipefail
 
@@ -43,6 +44,7 @@ rsync -a --delete \
   "$ROOT/app/" "$MIRROR/app/"
 rsync -a --delete "$ROOT/shared/" "$MIRROR/shared/"
 install_ca "$MIRROR/app/assets/ca.crt"
+install_relay_ca "$MIRROR/app/assets/relay_ca.crt"
 
 # Push Kit client id (AppGallery Connect → 项目设置 → 应用 → Client ID)
 if [[ $PUBLIC == true ]]; then
@@ -60,7 +62,7 @@ unsigned="$MIRROR/app/ohos/entry/build/default/outputs/default/entry-default-uns
 rm -f "$unsigned"
 # the flutter tool exits non-zero when the project has no IDE signing config,
 # even though hvigor produced the unsigned HAP; we sign it ourselves below
-flutter build hap "$MODE" --dart-define=LEDGER_SERVER="$SERVER_URL" || true
+flutter build hap "$MODE" --dart-define=LEDGER_SERVER="$SERVER_URL" --dart-define=LEDGER_RELAY="$RELAY_URL" || true
 [[ -f $unsigned ]] || { echo "构建失败：没有生成 HAP" >&2; exit 1; }
 
 mkdir -p "$ROOT/dist/ohos"
@@ -87,6 +89,7 @@ java -jar "$DEVECO_SDK_HOME/default/openharmony/toolchains/lib/hap-sign-tool.jar
 echo ">> $signed"
 if [[ $PUBLIC == true ]]; then
   echo ">> 公开版：不含服务器地址和证书"
+  echo ">> 两人同步转发：${RELAY_URL:-（不提供）}"
 else
   echo ">> 服务器地址：$SERVER_URL"
 fi

@@ -36,5 +36,27 @@ services:
     networks: [internal]
     logging: *logging
 
+  # Relay mode for the public build: forwards end-to-end encrypted messages
+  # between two phones and deletes each one once delivered. Only started
+  # with COMPOSE_PROFILES=relay in .env; not needed for your own ledger.
+  relay:
+    image: couple-ledger-server:${LEDGER_VERSION:?请在 .env 里设置 LEDGER_VERSION}
+    profiles: [relay]
+    restart: unless-stopped
+    entrypoint: ["/app/relay"]
+    environment:
+      RELAY_ADDR: 0.0.0.0:8091
+      RELAY_DIR: /app/relay_data
+    volumes:
+      - ./data/relay:/app/relay_data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8091/relay/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks: [internal]
+    logging: *logging
+
 networks:
   internal: {}

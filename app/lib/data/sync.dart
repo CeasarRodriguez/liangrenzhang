@@ -25,18 +25,32 @@ class SyncStatus {
       );
 }
 
+/// What the UI needs from a sync engine: [SyncService] (own server) or
+/// RelaySync (relay mode).
+abstract interface class SyncEngine {
+  ValueNotifier<SyncStatus> get status;
+
+  /// Fires for every alert that arrives unread while the app is running.
+  Stream<AlertItem> get newAlerts;
+
+  Future<void> syncNow();
+
+  Future<void> dispose();
+}
+
 /// Keeps the local cache in sync with the server: pushes the offline
 /// outbox, pulls changes incrementally and applies realtime events.
-class SyncService {
+class SyncService implements SyncEngine {
   SyncService({required this.pb, required this.db});
 
   final PocketBase pb;
   final LocalDb db;
 
+  @override
   final status = ValueNotifier(const SyncStatus());
 
-  /// Fires for every alert that arrives unread while the app is running.
   final _newAlerts = StreamController<AlertItem>.broadcast();
+  @override
   Stream<AlertItem> get newAlerts => _newAlerts.stream;
 
   /// Pulled incrementally by `updated`.
@@ -81,6 +95,7 @@ class SyncService {
     pb.realtime.onDisconnect = null;
   }
 
+  @override
   Future<void> dispose() async {
     await stop();
     await _newAlerts.close();
@@ -129,6 +144,7 @@ class SyncService {
   }
 
   /// Pushes the outbox, then pulls server changes. Safe to call often.
+  @override
   Future<void> syncNow() async {
     if (_syncing) {
       _again = true;

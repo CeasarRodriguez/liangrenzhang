@@ -1,14 +1,19 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'package:sembast/sembast_io.dart';
 
+import '../core/ids.dart';
 import 'api.dart';
 import 'local_db.dart';
 import 'native.dart';
 import 'offline.dart';
+import 'relay_client.dart';
+import 'relay_crypto.dart';
+import 'relay_sync.dart';
 import 'sync.dart';
 
 /// Server address baked in by a build for one particular server:
@@ -18,12 +23,21 @@ import 'sync.dart';
 const bakedServerUrl = String.fromEnvironment('LEDGER_SERVER');
 const isPublicBuild = bakedServerUrl == '';
 
-/// Offline trial (data stays on the phone, simulated partner) or a server.
-enum AppMode { online, offline }
+/// Relay server of the author, baked into the public build:
+///   --dart-define=LEDGER_RELAY=https://1.2.3.4:8443
+/// Empty: relay mode is not offered.
+const bakedRelayUrl = String.fromEnvironment('LEDGER_RELAY');
+
+/// How this phone keeps its data:
+/// - [offline]: trial, data stays on the phone, the partner is simulated;
+/// - [relay]: data on both phones only, end-to-end encrypted through the
+///   author's relay server, which cannot read it;
+/// - [online]: the couple's own server.
+enum AppMode { online, offline, relay }
 
 /// Platform facts shared by every [AppServices] instance.
 class AppEnv {
-  const AppEnv({required this.native, required this.platform, required this.dir, required this.caPem});
+  const AppEnv({required this.native, required this.platform, required this.dir, required this.caPem, this.relayCaPem});
 
   final NativeBridge native;
 
@@ -36,13 +50,18 @@ class AppEnv {
   /// Root CA baked into the app, if any.
   final String? caPem;
 
+  /// Root CA of the default relay server (public build), trusted for the
+  /// relay connection only.
+  final String? relayCaPem;
+
   File get _modeFile => File('$dir/app_mode');
 
   /// A build for one particular server always uses it.
   Future<AppMode> readMode() async {
     if (!isPublicBuild) return AppMode.online;
     try {
-      return (await _modeFile.readAsString()).trim() == AppMode.offline.name ? AppMode.offline : AppMode.online;
+      final name = (await _modeFile.readAsString()).trim();
+      return AppMode.values.where((m) => m.name == name).firstOrNull ?? AppMode.online;
     } on FileSystemException {
       return AppMode.online;
     }
@@ -51,7 +70,18 @@ class AppEnv {
   Future<void> writeMode(AppMode mode) => _modeFile.writeAsString(mode.name);
 }
 
-enum SessionStage { needsServer, loggedOut, needsHousehold, ready }
+enum SessionStage {
+  needsServer,
+  loggedOut,
+  needsHousehold,
+
+  /// Relay mode: create a pairing or enter the partner's code.
+  needsPairing,
+
+  /// Relay mode: a reinstalled phone waits for its data and picks who it is.
+  restoring,
+  ready,
+}
 
 class Session {
   const Session(this.stage, {this.userId = '', this.householdId = ''});
@@ -69,8 +99,12 @@ class AppServices {
   /// Opens the local database of the current mode and restores the session.
   static Future<AppServices> open(AppEnv env) async {
     final mode = await env.readMode();
-    // trial data is kept apart so it never mixes with a real account
-    final file = mode == AppMode.offline ? 'ledger-offline.db' : 'ledger.db';
+    // each mode has its own data, so trial data never mixes with a real account
+    final file = switch (mode) {
+      AppMode.offline => 'ledger-offline.db',
+      AppMode.relay => 'ledger-relay.db',
+      AppMode.online => 'ledger.db',
+    };
     final services = AppServices(
       env: env,
       mode: mode,
@@ -93,23 +127,47 @@ class AppServices {
 
   /// Certificates of [serverUrl] the user confirmed by fingerprint (PEM).
   List<String> pins = const [];
-  SyncService? sync;
+  SyncEngine? sync;
 
   /// Set in the offline trial, which never talks to a server.
   OfflineBackend? offline;
 
+  /// Set in relay mode once paired (also available as [sync]).
+  RelaySync? relay;
+  String relayUrl = '';
+  List<int>? _relaySecret;
+
+  /// Creates the connection to the relay server; replaced in tests.
+  late RelayTransport Function(RelayKeys keys, String device) relayTransport = (keys, device) =>
+      RelayClient(baseUrl: relayUrl, keys: keys, device: device, caPem: env.relayCaPem);
+
+  /// Budget alerts evaluated on this phone (offline trial and relay mode).
+  LocalAlerts? get localAlerts => offline ?? relay?.alerts;
+
+  /// Writes land in the local database first and need no server round trip.
+  bool get isLocalFirst => mode != AppMode.online;
+
   final session = ValueNotifier(const Session(SessionStage.loggedOut));
-  final _syncChanged = StreamController<SyncService?>.broadcast();
-  Stream<SyncService?> get syncChanges => _syncChanged.stream;
+  final _syncChanged = StreamController<SyncEngine?>.broadcast();
+  Stream<SyncEngine?> get syncChanges => _syncChanged.stream;
 
   bool get isAndroid => platform == 'android';
   bool get isHarmony => platform == 'ohos';
 
-  String get userId => offline != null ? offlineUserId : pb.authStore.record?.id ?? '';
-  String get householdId =>
-      offline != null ? offlineHouseholdId : pb.authStore.record?.getStringValue('household') ?? '';
+  String get userId => switch (mode) {
+    AppMode.offline => offlineUserId,
+    AppMode.relay => relay?.memberId ?? '',
+    AppMode.online => pb.authStore.record?.id ?? '',
+  };
+
+  String get householdId => switch (mode) {
+    AppMode.offline => offlineHouseholdId,
+    AppMode.relay => relay?.keys.householdId ?? '',
+    AppMode.online => pb.authStore.record?.getStringValue('household') ?? '',
+  };
 
   Future<void> init() async {
+    if (mode == AppMode.relay) return _initRelay();
     if (mode == AppMode.offline) {
       serverUrl = '';
       pb = PocketBase('http://127.0.0.1');
@@ -175,9 +233,10 @@ class AppServices {
 
   Future<void> _startSync() async {
     await sync?.dispose();
-    sync = SyncService(pb: pb, db: db);
-    _syncChanged.add(sync);
-    await sync!.start();
+    final s = SyncService(pb: pb, db: db);
+    sync = s;
+    _syncChanged.add(s);
+    await s.start();
     unawaited(registerDevice());
   }
 
@@ -217,6 +276,7 @@ class AppServices {
 
   Future<void> logout() async {
     if (offline != null) return offline!.reset();
+    if (mode == AppMode.relay) return unpair();
     await _stopSync();
     if (isAndroid) await native.stopAlertService();
     pb.authStore.clear();
@@ -250,9 +310,163 @@ class AppServices {
   /// Releases the database and connections before the app switches mode.
   Future<void> close() async {
     await _stopSync();
+    relay = null;
     await offline?.dispose();
     await _syncChanged.close();
     await db.db.close();
+  }
+
+  // ---------------------------------------------------------------------------
+  // relay mode
+
+  static const _relayUrlKey = 'relay:url';
+  static const _relaySecretKey = 'relay:secret';
+  static const _relayDeviceKey = 'relay:device';
+  static const _relayMemberKey = 'relay:member';
+
+  /// The code the partner enters to pair (relay mode).
+  String? get pairingCode => _relaySecret == null ? null : formatPairingCode(_relaySecret!);
+
+  static String _now() => DateTime.now().toUtc().toIso8601String();
+
+  Future<void> _initRelay() async {
+    serverUrl = '';
+    pb = PocketBase('http://127.0.0.1');
+    // the address baked into this build wins, so a new release can move the
+    // relay to another server; the pairing works there unchanged
+    relayUrl = bakedRelayUrl.isNotEmpty ? bakedRelayUrl : await db.getSetting<String>(_relayUrlKey) ?? '';
+    final secret = await db.getSetting<String>(_relaySecretKey);
+    final device = await db.getSetting<String>(_relayDeviceKey);
+    if (secret == null || device == null || relayUrl.isEmpty) {
+      session.value = const Session(SessionStage.needsPairing);
+      return;
+    }
+    _startRelay(base64.decode(secret), device, await db.getSetting<String>(_relayMemberKey) ?? '');
+  }
+
+  void _startRelay(List<int> secret, String device, String member) {
+    final keys = RelayKeys(secret);
+    _relaySecret = secret;
+    final r = relay = RelaySync(
+      db: db,
+      transport: relayTransport(keys, device),
+      keys: keys,
+      deviceId: device,
+      alerts: LocalAlerts(db, userId: member, householdId: keys.householdId),
+    );
+    sync = r;
+    _syncChanged.add(r);
+    _updateRelaySession();
+    unawaited(r.start());
+  }
+
+  void _updateRelaySession() {
+    final r = relay;
+    if (r == null) {
+      session.value = const Session(SessionStage.needsPairing);
+    } else if (r.memberId.isEmpty) {
+      session.value = Session(SessionStage.restoring, householdId: r.keys.householdId);
+    } else {
+      session.value = Session(SessionStage.ready, userId: r.memberId, householdId: r.keys.householdId);
+    }
+  }
+
+  Future<void> _saveRelay(List<int> secret, String device, String member) async {
+    await db.setSetting(_relayUrlKey, relayUrl);
+    await db.setSetting(_relaySecretKey, base64.encode(secret));
+    await db.setSetting(_relayDeviceKey, device);
+    await db.setSetting(_relayMemberKey, member.isEmpty ? null : member);
+  }
+
+  Map<String, Object?> _memberRecord(String id, String name, String householdId, String device) => {
+    'id': id,
+    'username': '',
+    'name': name.trim(),
+    'color': '',
+    'household': householdId,
+    'created': _now(),
+    'updated': _now(),
+    '_by': device,
+  };
+
+  /// Relay mode: opens a new room on the relay server for this couple.
+  /// Show [pairingCode] to the partner afterwards.
+  Future<void> createPair({required String name, required String householdName}) async {
+    final secret = newPairingSecret();
+    final keys = RelayKeys(secret);
+    final device = newDeviceId();
+    final probe = relayTransport(keys, device);
+    try {
+      await probe.join(create: true);
+    } finally {
+      probe.close();
+    }
+    final member = newRecordId();
+    await db.putLocal('households', {
+      'id': keys.householdId,
+      'name': householdName.trim(),
+      'invite_code': '',
+      'created': _now(),
+      'updated': _now(),
+      '_by': device,
+    });
+    await db.putLocal('users', _memberRecord(member, name, keys.householdId, device));
+    await seedDefaultAlertMessages(db, keys.householdId);
+    await _saveRelay(secret, device, member);
+    _startRelay(secret, device, member);
+  }
+
+  /// Relay mode: joins the partner's room. Without [name] the phone restores
+  /// an existing member (reinstalled app): it waits for the partner's data
+  /// and then [adoptMember] picks who this is.
+  Future<void> joinPair(String code, {String? name}) async {
+    final secret = parsePairingCode(code);
+    if (secret == null) throw const PairingCodeException();
+    final keys = RelayKeys(secret);
+    final device = newDeviceId();
+    final probe = relayTransport(keys, device);
+    try {
+      // a typo that still passes the check must not open an empty room
+      await probe.join(create: false);
+    } finally {
+      probe.close();
+    }
+    final member = name == null ? '' : newRecordId();
+    if (name != null) await db.putLocal('users', _memberRecord(member, name, keys.householdId, device));
+    await seedDefaultAlertMessages(db, keys.householdId);
+    await _saveRelay(secret, device, member);
+    _startRelay(secret, device, member);
+  }
+
+  /// Relay mode, restoring: this phone continues as member [id].
+  Future<void> adoptMember(String id) async {
+    final r = relay;
+    if (r == null) return;
+    await db.setSetting(_relayMemberKey, id);
+    r.alerts.userId = id;
+    _updateRelaySession();
+    unawaited(r.syncNow());
+  }
+
+  /// Relay mode, restoring: nothing to restore, join as a new member.
+  Future<void> joinAsNewMember(String name) async {
+    final r = relay;
+    if (r == null) return;
+    final record = _memberRecord(newRecordId(), name, r.keys.householdId, r.deviceId);
+    await db.putLocal('users', record);
+    await r.publish('users', record);
+    await adoptMember(record['id']! as String);
+  }
+
+  /// Relay mode: leaves the room and deletes this phone's data. The
+  /// partner's phone keeps its copy.
+  Future<void> unpair() async {
+    await relay?.leave();
+    await _stopSync();
+    relay = null;
+    _relaySecret = null;
+    await db.clearAccountData();
+    session.value = const Session(SessionStage.needsPairing);
   }
 
   // ---------------------------------------------------------------------------
@@ -261,7 +475,7 @@ class AppServices {
   /// Android: keeps a long-lived connection for alerts.
   /// HarmonyOS: registers the Push Kit token with the server.
   Future<void> registerDevice() async {
-    if (offline != null || session.value.stage != SessionStage.ready) return;
+    if (mode != AppMode.online || session.value.stage != SessionStage.ready) return;
     if (isAndroid) {
       final enabled = await db.getSetting<bool>('bg_alerts') ?? true;
       if (enabled) {
@@ -293,7 +507,7 @@ class AppServices {
 
   Future<void> setBackgroundAlerts(bool enabled) async {
     await db.setSetting('bg_alerts', enabled);
-    if (!isAndroid) return;
+    if (!isAndroid || mode != AppMode.online) return;
     if (enabled) {
       await registerDevice();
     } else {

@@ -6,6 +6,9 @@ import 'package:crypto/crypto.dart';
 import 'package:http/io_client.dart';
 import 'package:pocketbase/pocketbase.dart';
 
+import 'relay_client.dart';
+import 'relay_crypto.dart';
+
 /// Creates the PocketBase client. Besides the system roots it trusts our
 /// own root CA, so a self-signed server reachable by IP works securely, and
 /// the certificates the user confirmed by fingerprint ([pins], PEM).
@@ -135,6 +138,7 @@ const _codeMessages = {
 /// Turns any error into a short Chinese message for the UI.
 String describeError(Object e) {
   if (e is NotLedgerServerException) return e.message;
+  if (e is RelayException || e is RelayCryptoException || e is PairingCodeException) return e.toString();
   if (e is HandshakeException || e is TlsException) return '和服务器的加密连接失败，请检查地址是否正确';
   if (e is SocketException || e is TimeoutException) return '连不上服务器，请检查地址、端口和网络';
   if (e is! ClientException) return '出错了：$e';
