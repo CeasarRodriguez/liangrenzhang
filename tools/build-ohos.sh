@@ -10,6 +10,8 @@
 #       tools/build-ohos.sh --public       # 公开版：不含自己服务器的地址、证书和华为应用 ID，
 #                                          # 没有自己的服务器时用它（可和 --install 一起用）；
 #                                          # 两人同步默认用 tools/relay/ 里作者的服务器转发，RELAY_URL= 可关闭
+#       tools/build-ohos.sh --store        # 上架华为应用市场：公开版，打 .app 包，用发布证书和发布 Profile
+#                                          #（~/.couple-ledger-keys/harmony/release.cer、release.p7b）签名
 # 签名材料见 tools/setup-signing.sh 与 docs/鸿蒙签名与推送.md
 set -euo pipefail
 
@@ -19,11 +21,13 @@ KEYS_DIR=${KEYS_DIR:-$HOME/.couple-ledger-keys}
 MODE=--release
 INSTALL=false
 PUBLIC=false
+STORE=false
 for arg in "$@"; do
   case $arg in
     --debug) MODE=--debug ;;
     --install) INSTALL=true ;;
     --public) PUBLIC=true ;;
+    --store) STORE=true; PUBLIC=true; MODE=--release ;;
     *) echo "未知参数：$arg" >&2; exit 1 ;;
   esac
 done
@@ -59,6 +63,47 @@ else
 fi
 
 cd "$MIRROR/app"
+mkdir -p "$ROOT/dist/ohos"
+version=$(grep -E '^version:' "$ROOT/app/pubspec.yaml" | awk '{print $2}' | cut -d+ -f1)
+sign_tool="$DEVECO_SDK_HOME/default/openharmony/toolchains/lib/hap-sign-tool.jar"
+
+if $STORE; then
+  cert="$KEYS_DIR/harmony/release.cer"
+  profile="$KEYS_DIR/harmony/release.p7b"
+  [[ -f $cert && -f $profile ]] || { echo "缺少发布证书 $cert 或发布 Profile ${profile}，见 docs/鸿蒙签名与推送.md" >&2; exit 1; }
+  # shellcheck disable=SC1091
+  source "$KEYS_DIR/passwords.env"
+  release_sign() { # <in> <out> <signCode>
+    java -jar "$sign_tool" sign-app \
+      -mode localSign -signAlg SHA256withECDSA -keyAlias couple-ledger \
+      -keyPwd "$HARMONY_STORE_PASSWORD" -keystoreFile "$KEYS_DIR/harmony/harmony.p12" -keystorePwd "$HARMONY_STORE_PASSWORD" \
+      -appCertFile "$cert" -profileFile "$profile" -profileSigned 1 -inForm zip -signCode "$3" \
+      -inFile "$1" -outFile "$2"
+  }
+  app_unsigned="$MIRROR/app/ohos/build/outputs/default/ohos-default-unsigned.app"
+  rm -f "$app_unsigned"
+  # like the HAP build below: exits non-zero without an IDE signing config
+  flutter build app --release --dart-define=LEDGER_SERVER= --dart-define=LEDGER_RELAY="$RELAY_URL" || true
+  [[ -f $app_unsigned ]] || { echo "构建失败：没有生成 .app" >&2; exit 1; }
+
+  # sign every HAP inside, repack, then sign the .app itself
+  work=$(mktemp -d)
+  trap 'rm -rf "$work"' EXIT
+  (cd "$work" && unzip -q "$app_unsigned")
+  for hap in "$work"/*.hap; do
+    release_sign "$hap" "$hap.signed" 1
+    mv "$hap.signed" "$hap"
+  done
+  (cd "$work" && zip -q -X -0 repacked.app pack.info pac.json && zip -q -X -9 repacked.app ./*.hap)
+  store_app="$ROOT/dist/ohos/liangrenzhang-${version}-appgallery.app"
+  release_sign "$work/repacked.app" "$store_app" 0
+  java -jar "$sign_tool" verify-app -inFile "$store_app" -inForm zip \
+    -outCertChain "$work/chain.cer" -outProfile "$work/profile.p7b" >/dev/null
+  echo ">> $store_app"
+  echo ">> 上架包：公开版，两人同步转发：${RELAY_URL:-（不提供）}；在 AppGallery Connect 的版本信息里上传"
+  exit 0
+fi
+
 unsigned="$MIRROR/app/ohos/entry/build/default/outputs/default/entry-default-unsigned.hap"
 rm -f "$unsigned"
 # the flutter tool exits non-zero when the project has no IDE signing config,
@@ -66,10 +111,8 @@ rm -f "$unsigned"
 flutter build hap "$MODE" --dart-define=LEDGER_SERVER="$SERVER_URL" --dart-define=LEDGER_RELAY="$RELAY_URL" || true
 [[ -f $unsigned ]] || { echo "构建失败：没有生成 HAP" >&2; exit 1; }
 
-mkdir -p "$ROOT/dist/ohos"
 kind=${MODE#--}
 if [[ $PUBLIC == true ]]; then kind=public; fi
-version=$(grep -E '^version:' "$ROOT/app/pubspec.yaml" | awk '{print $2}' | cut -d+ -f1)
 
 cert="$KEYS_DIR/harmony/debug.cer"
 profile="$KEYS_DIR/harmony/debug.p7b"
@@ -82,7 +125,7 @@ fi
 # shellcheck disable=SC1091
 source "$KEYS_DIR/passwords.env"
 signed="$ROOT/dist/ohos/liangrenzhang-${version}-${kind}.hap"
-java -jar "$DEVECO_SDK_HOME/default/openharmony/toolchains/lib/hap-sign-tool.jar" sign-app \
+java -jar "$sign_tool" sign-app \
   -mode localSign -signAlg SHA256withECDSA -keyAlias couple-ledger \
   -keyPwd "$HARMONY_STORE_PASSWORD" -keystoreFile "$KEYS_DIR/harmony/harmony.p12" -keystorePwd "$HARMONY_STORE_PASSWORD" \
   -appCertFile "$cert" -profileFile "$profile" -profileSigned 1 -inForm zip -signCode 1 \
